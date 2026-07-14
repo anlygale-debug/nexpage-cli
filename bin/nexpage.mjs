@@ -1,13 +1,14 @@
 #!/usr/bin/env node
-import { readFileSync, writeFileSync, mkdirSync } from 'fs';
-import { join, resolve } from 'path';
+import { writeFileSync, mkdirSync, readdirSync } from 'fs';
+import { join, resolve, dirname } from 'path';
+import { fileURLToPath } from 'url';
 import { createInterface } from 'readline';
-import { chromium } from '/opt/homebrew/lib/node_modules/designlang/node_modules/playwright/index.mjs';
+import { chromium } from 'playwright';
 import { extractDesignLanguage, formatDtcgTokens, formatMarkdown, formatTailwind,
   formatCssVars, formatPreview, formatFigma, formatReactTheme, formatShadcnTheme,
   formatMotionTokens, formatWordPress, formatVueTheme, formatSvelteTheme,
   formatAnatomyStubs, formatV0Prompt, formatLovablePrompt, formatCursorPrompt,
-  formatClaudeArtifactPrompt } from '/opt/homebrew/lib/node_modules/designlang/src/index.js';
+  formatClaudeArtifactPrompt } from '../src/index.js';
 
 // ── Parse args ──
 const args = process.argv.slice(2);
@@ -33,7 +34,6 @@ if (help || args.length === 0) {
 
 let rawUrl = args[0];
 if (!rawUrl.startsWith('http')) rawUrl = `https://${rawUrl}`;
-// Validate URL
 try { new URL(rawUrl); } catch { console.error(' 错误：无效的网址'); process.exit(1); }
 
 const outFlag = args.indexOf('-o') > -1 ? args[args.indexOf('-o') + 1] : (args.indexOf('--out') > -1 ? args[args.indexOf('--out') + 1] : null);
@@ -43,7 +43,7 @@ const hostname = new URL(rawUrl).hostname.replace(/^www\./, '').replace(/\./g, '
 mkdirSync(outDir, { recursive: true });
 
 console.log('');
-console.log('  nexpage — 设计系统提取工具');
+console.log('  nexpage');
 console.log(`  ${rawUrl}`);
 console.log('');
 
@@ -83,7 +83,7 @@ try {
 console.log('  ◐ 正在提取设计系统...');
 const start = Date.now();
 const currentUrl = page.url();
-const design = await extractDesignLanguage(currentUrl, { existingPage: page });
+const design = await extractDesignLanguage(currentUrl, { existingPage: page, url: currentUrl });
 delete design._raw;
 delete design._smart;
 
@@ -110,23 +110,23 @@ const p = hostname;
 function w(name, content) {
   try { writeFileSync(join(outDir, name), typeof content === 'string' ? content : JSON.stringify(content, null, 2)); } catch {}
 }
-const dl = await import('/opt/homebrew/lib/node_modules/designlang/src/index.js');
+const dl = await import('../src/index.js');
 w(`${p}-design-tokens.json`, dl.formatDtcgTokens(design));
 w(`${p}-variables.css`, dl.formatCssVars(design));
-try { w(`${p}-tailwind-v4.css`, (await import('/opt/homebrew/lib/node_modules/designlang/src/formatters/tailwind-v4.js')).formatTailwindV4(design)); } catch {}
+try { w(`${p}-tailwind-v4.css`, (await import('../src/formatters/tailwind-v4.js')).formatTailwindV4(design)); } catch {}
 w(`${p}-tailwind.config.js`, dl.formatTailwind(design));
-try { w(`${p}-tokens.d.ts`, (await import('/opt/homebrew/lib/node_modules/designlang/src/formatters/ts-defs.js')).formatTsDefs(design)); } catch {}
-try { w(`${p}-reset.css`, (await import('/opt/homebrew/lib/node_modules/designlang/src/formatters/css-reset.js')).formatCssReset(design)); } catch {}
+try { w(`${p}-tokens.d.ts`, (await import('../src/formatters/ts-defs.js')).formatTsDefs(design)); } catch {}
+try { w(`${p}-reset.css`, (await import('../src/formatters/css-reset.js')).formatCssReset(design)); } catch {}
 w(`${p}-shadcn-theme.css`, dl.formatShadcnTheme(design));
-try { const g = await import('/opt/homebrew/lib/node_modules/designlang/src/formatters/gradients.js'); w(`${p}-gradients.css`, g.formatGradientsCss(design)); w(`${p}-gradients.json`, g.formatGradientsJson(design)); } catch {}
+try { const g = await import('../src/formatters/gradients.js'); w(`${p}-gradients.css`, g.formatGradientsCss(design)); w(`${p}-gradients.json`, g.formatGradientsJson(design)); } catch {}
 w(`${p}-figma-variables.json`, dl.formatFigma(design));
 w(`${p}-design-language.md`, dl.formatMarkdown(design));
 w(`${p}-preview.html`, dl.formatPreview(design));
-try { w(`${p}-AGENT.md`, (await import('/opt/homebrew/lib/node_modules/designlang/src/formatters/agent-prompt.js')).formatAgentPrompt(design)); } catch {}
-try { w(`${p}-DESIGN.md`, (await import('/opt/homebrew/lib/node_modules/designlang/src/formatters/design-md.js')).formatDesignMd(design)); } catch {}
-try { w(`${p}.brand.html`, (await import('/opt/homebrew/lib/node_modules/designlang/src/formatters/brand-book.js')).formatBrandBook(design, { version: '12.21.0' })); } catch {}
+try { w(`${p}-AGENT.md`, (await import('../src/formatters/agent-prompt.js')).formatAgentPrompt(design)); } catch {}
+try { w(`${p}-DESIGN.md`, (await import('../src/formatters/design-md.js')).formatDesignMd(design)); } catch {}
+try { w(`${p}.brand.html`, (await import('../src/formatters/brand-book.js')).formatBrandBook(design, { version: '0.1.0' })); } catch {}
 for (const [m, n] of [['motion-lab','motion.html'],['framer-motion','motion.framer.js'],['motion-one','motion.one.js'],['motion-css','motion.css'],['motion-tailwind','motion.tailwind.js'],['motion-gsap','motion.gsap.js'],['motion-waapi','motion.waapi.js']]) {
-  try { const mod = await import(`/opt/homebrew/lib/node_modules/designlang/src/formatters/${m}.js`); w(`${p}-${n}`, mod[Object.keys(mod).find(k => k.startsWith('format')) || 'default'](design)); } catch {}
+  try { const mod = await import(`../src/formatters/${m}.js`); w(`${p}-${n}`, mod[Object.keys(mod).find(k => k.startsWith('format')) || 'default'](design)); } catch {}
 }
 w(`${p}-motion-tokens.json`, dl.formatMotionTokens(design.motion || {}));
 w(`${p}-theme.js`, dl.formatReactTheme(design));
@@ -151,12 +151,10 @@ if (design.darkModePaired?.available) w(`${p}-dark-mode.json`, design.darkModePa
 w(`${p}-mcp.json`, { colors: { all: design.colors?.all || [] }, regions: design.regions || [], componentClusters: design.componentClusters || [], accessibility: { remediation: design.accessibility?.remediation || [] }, cssHealth: design.cssHealth || null });
 writeFileSync(join(outDir, 'result.json'), JSON.stringify(design, null, 2));
 
-// ── Step 8: Summary ──
+// ── Summary ──
 const s = design.score || {};
 const c = design.colors || {};
 const t = design.typography || {};
-const sp = design.spacing || {};
-const { readdirSync } = await import('fs');
 const files = readdirSync(outDir).length;
 
 const gradeIcon = s.grade === 'A' ? '●' : s.grade === 'B' ? '◉' : '○';

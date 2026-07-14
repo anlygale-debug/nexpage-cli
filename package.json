@@ -1,13 +1,16 @@
 {
   "name": "nexpage",
   "version": "0.1.0",
-  "description": "Extract design systems from any website with visible browser login — zero headless limitations",
+  "description": "Extract design systems from any website — open visible browser, log in, extract tokens",
   "type": "module",
   "bin": {
     "nexpage": "./bin/nexpage.mjs"
   },
-  "scripts": {
-    "start": "node bin/nexpage.mjs"
+  "dependencies": {
+    "playwright": "^1.42.0"
+  },
+  "engines": {
+    "node": ">=20"
   },
   "keywords": ["design-system", "design-tokens", "extraction", "tailwind", "css"],
   "author": "",
