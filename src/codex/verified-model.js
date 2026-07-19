@@ -93,9 +93,10 @@ function colorMetrics(hex) {
   const channels = [1, 3, 5].map(index => Number.parseInt(hex.slice(index, index + 2), 16) / 255);
   const max = Math.max(...channels);
   const min = Math.min(...channels);
+  const chroma = max - min;
   const lightness = (max + min) / 2;
   const saturation = max === min ? 0 : (max - min) / (1 - Math.abs(2 * lightness - 1));
-  return { lightness, saturation };
+  return { chroma, lightness, saturation };
 }
 
 function verified(value, confidence, evidence) {
@@ -151,11 +152,11 @@ function selectActions(actions) {
   }
 
   for (const group of groups.values()) {
-    const { saturation } = colorMetrics(group.background);
+    const { chroma } = colorMetrics(group.background);
     const repetition = Math.log2(group.actions.length + 1);
     const prominence = Math.log10(group.maxArea + 1);
     group.score = (group.scopes.size * 5) + (repetition * 2)
-      + (saturation * 12) + (prominence * 2);
+      + (chroma * 12) + (prominence * 2);
     group.isVerified = group.actions.length > 1
       || group.scopes.size > 1
       || group.actions.some(action => action.scope === 'main');
@@ -273,7 +274,7 @@ function buildTypography(evidence, candidates) {
     });
   }
 
-  for (const item of [...headings.slice(1), ...bodyText.slice(1), ...labels]) {
+  for (const item of [...headings.slice(1), ...bodyText, ...labels]) {
     const value = cleanStyleTypography(item);
     if (!value || Object.values(result).some(entry => entry.value.family === value.family)) continue;
     if (!candidates.some(entry => entry.value.family === value.family)) {

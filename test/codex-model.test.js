@@ -145,3 +145,48 @@ test('model chooses a representative non-mono body family instead of the first a
   assert.equal(model.verified.typography.body.value.family, 'DM Sans');
   assert.equal(model.verified.typography.mono.value.family, 'Space Mono');
 });
+
+test('model does not treat a near-white tint as more chromatic than the primary accent', () => {
+  const makeAction = ({ backgroundColor, index, scope, width, height }) => ({
+    ...greptileEvidence.actions[0],
+    selector: `.contrast-action-${index}`,
+    scope,
+    rect: { x: 80, y: 100 + (index * 52), width, height },
+    style: { ...greptileEvidence.actions[0].style, backgroundColor },
+  });
+  const actions = [
+    makeAction({ backgroundColor: 'rgb(40, 233, 159)', index: 0, scope: 'nav', width: 124, height: 44 }),
+    makeAction({ backgroundColor: 'rgb(40, 233, 159)', index: 1, scope: 'main', width: 152, height: 48 }),
+    ...Array.from({ length: 4 }, (_, index) => makeAction({
+      backgroundColor: 'rgb(255, 250, 250)',
+      index: index + 2,
+      scope: index === 0 ? 'nav' : 'main',
+      width: 132,
+      height: 44,
+    })),
+  ];
+
+  const model = buildVerifiedVisualModel(design, { ...greptileEvidence, actions }, { fullPageCaptured: true });
+
+  assert.equal(model.verified.colors.actionPrimary.value, '#28e99f');
+});
+
+test('model keeps the first minority body family as a candidate when another family wins', () => {
+  const minority = {
+    ...greptileEvidence.bodyText[0],
+    selector: '.minority-copy',
+    rect: { x: 80, y: 120, width: 280, height: 24 },
+    style: { ...greptileEvidence.bodyText[0].style, fontFamily: 'Minority Sans, sans-serif' },
+  };
+  const bodyText = [
+    minority,
+    greptileEvidence.bodyText[0],
+    { ...greptileEvidence.bodyText[0], selector: 'main .body-copy-two' },
+    { ...greptileEvidence.bodyText[0], selector: 'main .body-copy-three' },
+  ];
+
+  const model = buildVerifiedVisualModel(design, { ...greptileEvidence, bodyText }, { fullPageCaptured: true });
+
+  assert.equal(model.verified.typography.body.value.family, 'DM Sans');
+  assert.ok(model.candidates.typography.some(entry => entry.value.family === 'Minority Sans'));
+});
