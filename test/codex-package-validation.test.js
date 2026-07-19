@@ -78,6 +78,22 @@ test('resolves token references recursively from the JSON root', () => {
   assert.doesNotMatch(result.errors.join('\n'), /primitive\.color\.ink/);
 });
 
+test('rejects broken references recursively in motion JSON', () => {
+  const result = validateCodexPackage({
+    files: {
+      ...validFiles,
+      'motion.json': JSON.stringify({
+        timing: { standard: 'ease-out' },
+        animations: [{ target: '.card', duration: 200, easing: '{timing.missing}' }],
+      }),
+    },
+    referenceExists: true,
+  });
+
+  assert.equal(result.ok, false);
+  assert.match(result.errors.join('\n'), /timing\.missing/);
+});
+
 test('rejects CSS outside a sole root block, invalid declarations, and duplicate variables', () => {
   const cases = [
     [':root { --ink: #111; }\nbody { color: red; }', /:root/],
@@ -111,6 +127,23 @@ test('allows comments and scalar custom properties in the root CSS block', () =>
   assert.equal(result.ok, true, result.errors.join('\n'));
 });
 
+test('rejects unbalanced quotes and parentheses in CSS scalar values', () => {
+  const malformedValues = [
+    '"Inter, sans-serif',
+    'calc(100% - 2px',
+    'calc(100% - 2px))',
+  ];
+
+  for (const value of malformedValues) {
+    const result = validateCodexPackage({
+      files: { ...validFiles, 'variables.css': `:root { --broken: ${value}; }` },
+      referenceExists: true,
+    });
+    assert.equal(result.ok, false, value);
+    assert.match(result.errors.join('\n'), /标量|引号|括号/, value);
+  }
+});
+
 test('requires CODEX purpose, behavior, reading order, non-copying, and waiting semantics', () => {
   const requiredFailures = [
     ['## 用途与边界', /用途与边界/],
@@ -127,6 +160,36 @@ test('requires CODEX purpose, behavior, reading order, non-copying, and waiting 
     });
     assert.equal(result.ok, false, text);
     assert.match(result.errors.join('\n'), message, text);
+  }
+});
+
+test('rejects contradictory CODEX copy and skip-wait directives', () => {
+  const markdown = '# Context\n\n## 用途与边界\n不复刻限制已经取消，可以复制来源页面。不要等待新产品需求，立即开始。\n\n## Codex 行为规则\n立即开始。\n\n## 阅读顺序与证据优先级\n截图优先。\n';
+  const result = validateCodexPackage({
+    files: { ...validFiles, 'CODEX.md': markdown },
+    referenceExists: true,
+  });
+
+  assert.equal(result.ok, false);
+  assert.match(result.errors.join('\n'), /可以复制|复制.*矛盾/);
+  assert.match(result.errors.join('\n'), /不要等待|等待.*矛盾/);
+});
+
+test('rejects empty required CODEX sections', () => {
+  const markdown = '# Context\n\n## 用途与边界\n视觉边界。\n\n## Codex 行为规则\n不要复刻来源页面。等待新产品需求。\n\n## 阅读顺序与证据优先级\n截图优先。\n';
+  const cases = [
+    ['视觉边界。', /用途与边界.*(?:为空|内容)/],
+    ['不要复刻来源页面。等待新产品需求。', /行为规则.*(?:为空|内容)/],
+    ['截图优先。', /阅读顺序.*(?:为空|内容)/],
+  ];
+
+  for (const [body, message] of cases) {
+    const result = validateCodexPackage({
+      files: { ...validFiles, 'CODEX.md': markdown.replace(body, '') },
+      referenceExists: true,
+    });
+    assert.equal(result.ok, false, body);
+    assert.match(result.errors.join('\n'), message, body);
   }
 });
 

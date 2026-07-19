@@ -51,6 +51,36 @@ function parseJsonFile(files, fileName, errors) {
   }
 }
 
+function isBalancedCssScalar(value) {
+  let quote = null;
+  let escaped = false;
+  let parentheses = 0;
+
+  for (const character of value) {
+    if (quote) {
+      if (escaped) {
+        escaped = false;
+      } else if (character === '\\') {
+        escaped = true;
+      } else if (character === quote) {
+        quote = null;
+      }
+      continue;
+    }
+
+    if (character === '"' || character === "'") {
+      quote = character;
+    } else if (character === '(') {
+      parentheses += 1;
+    } else if (character === ')') {
+      if (parentheses === 0) return false;
+      parentheses -= 1;
+    }
+  }
+
+  return quote === null && parentheses === 0;
+}
+
 function validateCss(source, errors) {
   const withoutComments = source.replace(/\/\*[\s\S]*?\*\//g, '');
   const root = withoutComments.match(/^\s*:root\s*\{([\s\S]*)\}\s*$/);
@@ -90,6 +120,9 @@ function validateCss(source, errors) {
     if (!value) {
       errors.push(`variables.css 的 --${name} 必须使用非空标量值。`);
     }
+    if (!isBalancedCssScalar(value)) {
+      errors.push(`variables.css 的 --${name} 标量值包含未配对的引号或括号。`);
+    }
     if (/\[object Object\]|\bundefined\b|\bnull\b/i.test(value)) {
       const invalid = value.match(/\[object Object\]|\bundefined\b|\bnull\b/i)?.[0];
       errors.push(`variables.css 的 --${name} 包含非法值 ${invalid}。`);
@@ -102,17 +135,50 @@ function validateCss(source, errors) {
   }
 }
 
-function validateCodexMarkdown(markdown, fullPageExists, errors) {
-  const requirements = [
-    [/^##\s+用途与边界\s*$/m, 'CODEX.md 缺少“用途与边界”部分。'],
-    [/^##\s+(?:Codex\s*)?行为规则\s*$/im, 'CODEX.md 缺少“行为规则”部分。'],
-    [/^##\s+阅读顺序(?:与证据优先级)?\s*$/m, 'CODEX.md 缺少“阅读顺序”部分。'],
-    [/不(?:要|得|应)?(?:复刻|复制)/, 'CODEX.md 必须明确不复刻或不复制来源页面。'],
-    [/(?:等待[^\n。]{0,40}需求|需求[^\n。]{0,40}等待)/, 'CODEX.md 必须明确等待新产品需求。'],
-  ];
+function getMarkdownSectionBody(markdown, titlePattern) {
+  const headings = [...markdown.matchAll(/^(#{1,6})\s+(.+?)\s*$/gm)];
+  const sectionIndex = headings.findIndex(match => match[1].length === 2 && titlePattern.test(match[2]));
+  if (sectionIndex === -1) return null;
 
-  for (const [pattern, message] of requirements) {
-    if (!pattern.test(markdown)) errors.push(message);
+  const section = headings[sectionIndex];
+  const next = headings.slice(sectionIndex + 1).find(match => match[1].length <= 2);
+  const body = markdown.slice(section.index + section[0].length, next?.index ?? markdown.length);
+  return body.replace(/^#{3,6}\s+.*$/gm, '').trim();
+}
+
+function validateCodexMarkdown(markdown, fullPageExists, errors) {
+  const requiredSections = [
+    ['用途与边界', /^用途与边界$/],
+    ['行为规则', /^(?:Codex\s*)?行为规则$/i],
+    ['阅读顺序', /^阅读顺序(?:与证据优先级)?$/],
+  ];
+  const sections = new Map();
+
+  for (const [name, titlePattern] of requiredSections) {
+    const body = getMarkdownSectionBody(markdown, titlePattern);
+    sections.set(name, body);
+    if (body === null) {
+      errors.push(`CODEX.md 缺少“${name}”部分。`);
+    } else if (body === '') {
+      errors.push(`CODEX.md 的“${name}”部分内容不得为空。`);
+    }
+  }
+
+  const directiveText = `${sections.get('用途与边界') || ''}\n${sections.get('行为规则') || ''}`;
+  const copyConflict = /(?:不(?:复刻|复制)[^。\n]{0,24}(?:取消|解除|无效)|(?:可以|允许|直接)[^。\n]{0,8}(?:复刻|复制)(?:来源)?页面)/;
+  const waitConflict = /(?:不要|无需|不用|跳过|取消)[^。\n]{0,8}等待[^。\n]{0,24}(?:需求|用户)/;
+
+  if (copyConflict.test(directiveText)) {
+    errors.push('CODEX.md 包含“可以复制”或取消不复刻限制的矛盾指令。');
+  }
+  if (waitConflict.test(directiveText)) {
+    errors.push('CODEX.md 包含“不要等待”需求的矛盾指令。');
+  }
+  if (!/(?:不要|不得|不应|禁止|严禁)(?:直接)?(?:复刻|复制)/.test(directiveText)) {
+    errors.push('CODEX.md 必须明确不复刻或不复制来源页面。');
+  }
+  if (!/等待(?:用户(?:继续说明)?|新产品)?需求/.test(directiveText)) {
+    errors.push('CODEX.md 必须明确等待新产品需求。');
   }
 
   if (fullPageExists === false) {
@@ -184,7 +250,7 @@ export function validateCodexPackage(input = {}) {
     } else {
       const motion = parseJsonFile(files, 'motion.json', errors);
       if (motion !== null) {
-        inspectMachineValue(motion, 'motion.json', errors);
+        inspectMachineValue(motion, 'motion.json', errors, { references: true, root: motion });
         validateMotion(motion, errors);
       }
     }
