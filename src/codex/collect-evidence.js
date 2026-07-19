@@ -78,6 +78,18 @@ export async function collectCodexEvidence(page) {
       return 'other';
     };
 
+    const hasOpaqueBackground = value => {
+      const normalized = (value || '').trim().toLowerCase();
+      if (!normalized || normalized === 'transparent') return false;
+      const slashAlpha = normalized.match(/\/\s*([\d.]+)(%)?\s*\)$/);
+      if (slashAlpha) return Number.parseFloat(slashAlpha[1]) > 0;
+      if (normalized.startsWith('rgba(')) {
+        const channels = normalized.slice(5, -1).split(',');
+        if (channels.length === 4) return Number.parseFloat(channels[3]) > 0;
+      }
+      return true;
+    };
+
     const evidence = {
       viewport: { width: window.innerWidth, height: window.innerHeight },
       headings: collect('h1, h2, h3', limits.headings),
@@ -92,16 +104,33 @@ export async function collectCodexEvidence(page) {
       animations: [],
     };
 
-    evidence.surfaces = collect('body, main, section, article, footer, [role="main"]', limits.surfaces, (element, order) => {
-      const rect = element.getBoundingClientRect();
-      const style = getComputedStyle(element);
-      return {
-        selector: selectorFor(element),
-        order,
-        rect: { width: rect.width, height: rect.height },
-        style: { backgroundColor: style.backgroundColor, color: style.color },
-      };
-    });
+    const surfaceSelector = 'body, main, section, article, footer, [role="main"], [class*="bg-"], [class*="surface"], [class*="background"]';
+    const minimumSurfaceWidth = Math.max(240, window.innerWidth * 0.5);
+    const minimumSurfaceHeight = Math.max(120, window.innerHeight * 0.15);
+    const seenSurfaces = new Set();
+    evidence.surfaces = Array.from(document.querySelectorAll(surfaceSelector))
+      .filter(element => {
+        if (seenSurfaces.has(element)) return false;
+        seenSurfaces.add(element);
+        if (!isVisible(element)) return false;
+        const rect = element.getBoundingClientRect();
+        const style = getComputedStyle(element);
+        return rect.width >= minimumSurfaceWidth
+          && rect.height >= minimumSurfaceHeight
+          && hasOpaqueBackground(style.backgroundColor);
+      })
+      .sort((a, b) => a.getBoundingClientRect().y - b.getBoundingClientRect().y)
+      .slice(0, limits.surfaces)
+      .map((element, order) => {
+        const rect = element.getBoundingClientRect();
+        const style = getComputedStyle(element);
+        return {
+          selector: selectorFor(element),
+          order,
+          rect: { width: rect.width, height: rect.height },
+          style: { backgroundColor: style.backgroundColor, color: style.color },
+        };
+      });
 
     evidence.animations = document.getAnimations()
       .filter(animation => animation.effect && animation.effect.target instanceof Element)
