@@ -49,9 +49,29 @@ function normalizeColor(value) {
   return null;
 }
 
+function colorAlpha(value) {
+  if (typeof value !== 'string') return null;
+  const input = value.trim().toLowerCase();
+  if (input === 'transparent') return 0;
+  const rgb = input.match(/^rgba?\(\s*([\d.]+%?)\s*[, ]\s*([\d.]+%?)\s*[, ]\s*([\d.]+%?)(?:\s*[,/]\s*([\d.]+%?))?\s*\)$/);
+  if (rgb) {
+    if (rgb[4] === undefined) return 1;
+    const alpha = rgb[4].endsWith('%') ? Number.parseFloat(rgb[4]) / 100 : Number.parseFloat(rgb[4]);
+    return Number.isFinite(alpha) && alpha >= 0 && alpha <= 1 ? alpha : null;
+  }
+  if (/^#[\da-f]{3}$|^#[\da-f]{6}$/.test(input)) return 1;
+  if (/^#[\da-f]{4}$/.test(input)) return Number.parseInt(input[4], 16) / 15;
+  if (/^#[\da-f]{8}$/.test(input)) return Number.parseInt(input.slice(7), 16) / 255;
+  return null;
+}
+
 function usableColor(value) {
   const color = normalizeColor(value);
   return color && !DEFAULT_LINK_COLORS.has(color) ? color : null;
+}
+
+function usableOpaqueColor(value) {
+  return colorAlpha(value) === 1 ? usableColor(value) : null;
 }
 
 function firstFontFamily(value) {
@@ -116,7 +136,7 @@ function addRejected(rejected, path, value, reason) {
 function selectActions(actions) {
   const groups = new Map();
   for (const action of actions.filter(isVisible)) {
-    const background = usableColor(action.style?.backgroundColor);
+    const background = usableOpaqueColor(action.style?.backgroundColor);
     if (!background) continue;
     const width = finiteNumber(action.rect?.width);
     const height = finiteNumber(action.rect?.height);
@@ -157,6 +177,38 @@ function normalizedShape(action) {
   if (clipPath && clipPath !== 'none' && clipPath !== '[object Object]') value.clipPath = clipPath;
   if (radius !== null && radius > 0) value.borderRadius = radius;
   return Object.keys(value).length ? value : null;
+}
+
+function buildActionShape(actions, primaryAction) {
+  const groups = new Map();
+  for (const action of actions.filter(isVisible)) {
+    const value = normalizedShape(action);
+    if (!value) continue;
+    const key = JSON.stringify(value);
+    const current = groups.get(key) || { value, actions: [] };
+    current.actions.push(action);
+    groups.set(key, current);
+  }
+
+  const primaryActions = new Set(primaryAction?.actions || []);
+  for (const group of groups.values()) {
+    group.hasMainAction = group.actions.some(action => action.scope === 'main');
+    group.primaryInstances = group.actions.filter(action => primaryActions.has(action)).length;
+    group.score = (group.actions.length * 4) + (group.primaryInstances * 3) + (group.hasMainAction ? 2 : 0);
+  }
+
+  const eligible = [...groups.values()]
+    .filter(group => group.actions.length > 1 || group.hasMainAction)
+    .sort((a, b) => b.score - a.score);
+  const selected = eligible[0];
+  if (!selected) return null;
+  return verified(selected.value, selected.actions.length > 1 ? 0.98 : 0.86, {
+    source: 'rendered actions',
+    instances: selected.actions.length,
+    rationale: selected.actions.length > 1
+      ? 'shape repeated across visible actions'
+      : 'explicit shape on the main action',
+  });
 }
 
 function buildTypography(evidence, candidates) {
@@ -375,25 +427,8 @@ export function buildVerifiedVisualModel(design, evidence = {}, options = {}) {
   model.verified.typography = buildTypography(evidence, candidates.typography);
   model.verified.spacing = buildSpacing(sourceDesign, rejected);
 
-  if (primaryAction) {
-    const shapeGroups = new Map();
-    for (const action of primaryAction.actions) {
-      const value = normalizedShape(action);
-      if (!value) continue;
-      const key = JSON.stringify(value);
-      const current = shapeGroups.get(key) || { value, actions: [] };
-      current.actions.push(action);
-      shapeGroups.set(key, current);
-    }
-    const shape = [...shapeGroups.values()].sort((a, b) => b.actions.length - a.actions.length)[0];
-    if (shape && (shape.actions.length > 1 || shape.actions.some(action => action.scope === 'main'))) {
-      model.verified.shapes.actionPrimary = verified(shape.value, shape.actions.length > 1 ? 0.98 : 0.86, {
-        source: 'rendered primary actions',
-        instances: shape.actions.length,
-        rationale: shape.actions.length > 1 ? 'repeated action shape' : 'explicit shape on the main primary action',
-      });
-    }
-  }
+  const actionShape = buildActionShape(evidenceList(evidence, 'actions'), primaryAction);
+  if (actionShape) model.verified.shapes.actionPrimary = actionShape;
 
   model.verified.motion = buildMotion(sourceDesign, evidence);
 

@@ -53,3 +53,34 @@ test('model records limited coverage without inventing full-page rhythm', () => 
   assert.equal(model.coverage.fullPageError, 'page height exceeded limit');
   assert.deepEqual(model.rhythm.surfaceSequence, []);
 });
+
+test('model promotes a repeated action shape across different background colors', () => {
+  const actions = greptileEvidence.actions.map((action, index) => ({
+    ...action,
+    scope: index === 0 ? 'nav' : 'footer',
+    style: {
+      ...action.style,
+      backgroundColor: index === 0 ? 'rgb(40, 233, 159)' : 'rgb(255, 120, 80)',
+    },
+  }));
+  const model = buildVerifiedVisualModel(design, { ...greptileEvidence, actions }, { fullPageCaptured: true });
+
+  assert.match(model.verified.shapes.actionPrimary.value.clipPath, /^polygon\(/);
+  assert.equal(model.verified.shapes.actionPrimary.evidence.instances, 2);
+});
+
+test('model does not promote a semi-transparent action background as a filled role', () => {
+  const action = {
+    ...greptileEvidence.actions[1],
+    style: {
+      ...greptileEvidence.actions[1].style,
+      backgroundColor: 'rgba(40, 233, 159, 0.05)',
+    },
+  };
+  const model = buildVerifiedVisualModel(design, {
+    ...greptileEvidence,
+    actions: [action],
+  }, { fullPageCaptured: true });
+
+  assert.equal(model.verified.colors.actionPrimary, undefined);
+});
