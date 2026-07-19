@@ -140,17 +140,22 @@ function selectActions(actions) {
     if (!background) continue;
     const width = finiteNumber(action.rect?.width);
     const height = finiteNumber(action.rect?.height);
-    const current = groups.get(background) || { background, actions: [], scopes: new Set(), area: 0 };
+    const current = groups.get(background) || {
+      background, actions: [], scopes: new Set(), area: 0, maxArea: 0,
+    };
     current.actions.push(action);
     if (typeof action.scope === 'string' && action.scope) current.scopes.add(action.scope);
     current.area += width * height;
+    current.maxArea = Math.max(current.maxArea, width * height);
     groups.set(background, current);
   }
 
   for (const group of groups.values()) {
     const { saturation } = colorMetrics(group.background);
-    group.score = (group.scopes.size * 6) + (group.actions.length * 4)
-      + (saturation * 3) + Math.log10(1 + group.area);
+    const repetition = Math.log2(group.actions.length + 1);
+    const prominence = Math.log10(group.maxArea + 1);
+    group.score = (group.scopes.size * 5) + (repetition * 2)
+      + (saturation * 12) + (prominence * 2);
     group.isVerified = group.actions.length > 1
       || group.scopes.size > 1
       || group.actions.some(action => action.scope === 'main');
@@ -211,17 +216,48 @@ function buildActionShape(actions, primaryAction) {
   });
 }
 
+function usesMonoFamily(item) {
+  const family = item?.style?.fontFamily;
+  return typeof family === 'string' && /(?:\bmono\b|monospace)/i.test(family);
+}
+
+function selectRepresentativeBody(bodyText) {
+  const groups = new Map();
+  for (const item of bodyText) {
+    const typography = cleanStyleTypography(item);
+    if (!typography || usesMonoFamily(item)) continue;
+    const area = finiteNumber(item.rect?.width) * finiteNumber(item.rect?.height);
+    const current = groups.get(typography.family) || { items: [], area: 0 };
+    current.items.push(item);
+    current.area += Number.isFinite(area) ? area : 0;
+    groups.set(typography.family, current);
+  }
+
+  for (const group of groups.values()) {
+    group.score = (Math.log2(group.items.length + 1) * 4) + (Math.log10(group.area + 1) * 2);
+  }
+  const familyGroup = [...groups.values()].sort((a, b) => b.score - a.score)[0];
+  if (!familyGroup) return null;
+
+  return familyGroup.items.sort((a, b) => {
+    const sampleScore = item => {
+      const area = finiteNumber(item.rect?.width) * finiteNumber(item.rect?.height);
+      const size = finiteNumber(item.style?.fontSize) || 0;
+      const semantic = /(?:^|\s|>)main(?:$|[\s.#[:>])/i.test(item.selector || '') ? 2 : 0;
+      return semantic + (Math.log10((Number.isFinite(area) ? area : 0) + 1) * 2) + (Math.min(size, 32) / 16);
+    };
+    return sampleScore(b) - sampleScore(a);
+  })[0];
+}
+
 function buildTypography(evidence, candidates) {
   const result = {};
   const headings = evidenceList(evidence, 'headings').filter(isVisible);
   const bodyText = evidenceList(evidence, 'bodyText').filter(isVisible);
   const labels = evidenceList(evidence, 'labels').filter(isVisible);
   const displayItem = headings.find(item => /(^|\s|>)h1(?=$|[.#[:\s>])/i.test(item.selector || '')) || headings[0];
-  const bodyItem = bodyText[0];
-  const monoItem = labels.find(item => {
-    const family = item.style?.fontFamily;
-    return typeof family === 'string' && /(?:mono|monospace)/i.test(family);
-  });
+  const bodyItem = selectRepresentativeBody(bodyText);
+  const monoItem = [...labels, ...bodyText].find(usesMonoFamily);
 
   for (const [role, item, confidence] of [
     ['display', displayItem, 0.99],

@@ -84,3 +84,64 @@ test('model does not promote a semi-transparent action background as a filled ro
 
   assert.equal(model.verified.colors.actionPrimary, undefined);
 });
+
+test('model favors a prominent chromatic action over numerous muted secondary actions', () => {
+  const makeAction = ({ backgroundColor, index, scope, text, width = 108, height = 40 }) => ({
+    ...greptileEvidence.actions[0],
+    selector: `.action-${index}`,
+    text,
+    scope,
+    rect: { x: 40 + index, y: 80 + (index * 48), width, height },
+    style: { ...greptileEvidence.actions[0].style, backgroundColor },
+  });
+  const actions = [
+    ...Array.from({ length: 6 }, (_, index) => makeAction({
+      backgroundColor: 'rgb(61, 59, 79)',
+      index,
+      scope: index === 0 ? 'nav' : 'main',
+      text: index === 0 ? 'Contact Sales' : `Learn ${index}`,
+    })),
+    makeAction({ backgroundColor: 'rgb(40, 233, 159)', index: 6, scope: 'nav', text: 'Sign up', width: 124, height: 44 }),
+    makeAction({ backgroundColor: 'rgb(40, 233, 159)', index: 7, scope: 'main', text: 'Start now', width: 152, height: 48 }),
+    makeAction({ backgroundColor: 'rgb(255, 105, 180)', index: 8, scope: 'main', text: 'Try feature A', width: 92, height: 36 }),
+    makeAction({ backgroundColor: 'rgb(255, 105, 180)', index: 9, scope: 'main', text: 'Try feature B', width: 92, height: 36 }),
+  ];
+
+  const model = buildVerifiedVisualModel(design, { ...greptileEvidence, actions }, { fullPageCaptured: true });
+
+  assert.equal(model.verified.colors.actionPrimary.value, '#28e99f');
+  assert.equal(model.verified.colors.actionSecondary.value, '#3d3b4f');
+});
+
+test('model chooses a representative non-mono body family instead of the first announcement', () => {
+  const bodyText = [
+    {
+      ...greptileEvidence.bodyText[0],
+      selector: '.announcement',
+      rect: { x: 80, y: 72, width: 800, height: 20 },
+      style: {
+        ...greptileEvidence.bodyText[0].style,
+        fontFamily: 'Space Mono, monospace',
+        fontSize: '14px',
+        lineHeight: '20px',
+      },
+    },
+    {
+      ...greptileEvidence.bodyText[0],
+      selector: 'main .hero-copy',
+      rect: { x: 96, y: 350, width: 640, height: 72 },
+      style: { ...greptileEvidence.bodyText[0].style, fontSize: '24px', lineHeight: '34px' },
+    },
+    greptileEvidence.bodyText[0],
+    {
+      ...greptileEvidence.bodyText[0],
+      selector: 'main .feature-copy',
+      rect: { x: 96, y: 800, width: 520, height: 58 },
+    },
+  ];
+
+  const model = buildVerifiedVisualModel(design, { ...greptileEvidence, bodyText }, { fullPageCaptured: true });
+
+  assert.equal(model.verified.typography.body.value.family, 'DM Sans');
+  assert.equal(model.verified.typography.mono.value.family, 'Space Mono');
+});
