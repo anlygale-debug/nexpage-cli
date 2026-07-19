@@ -1,14 +1,14 @@
 #!/usr/bin/env node
 import { writeFileSync, mkdirSync, readdirSync } from 'fs';
-import { join, resolve, dirname } from 'path';
-import { fileURLToPath } from 'url';
+import { join } from 'path';
 import { createInterface } from 'readline';
 import { chromium } from 'playwright';
 import { extractDesignLanguage, formatDtcgTokens, formatMarkdown, formatTailwind,
   formatCssVars, formatPreview, formatFigma, formatReactTheme, formatShadcnTheme,
   formatMotionTokens, formatWordPress, formatVueTheme, formatSvelteTheme,
   formatAnatomyStubs, formatV0Prompt, formatLovablePrompt, formatCursorPrompt,
-  formatClaudeArtifactPrompt } from '../src/index.js';
+  formatClaudeArtifactPrompt, isCodexProfile, isWithCodex, writeCodexContextPack,
+  resolveOutputDirectory } from '../src/index.js';
 
 // ── Parse args ──
 const args = process.argv.slice(2);
@@ -21,13 +21,19 @@ if (help || args.length === 0) {
 
   选项:
     -o, --out <dir>   输出目录 (默认: ./nexpage-output/)
+    --pick-output     用 Finder 选择保存位置，并自动创建防覆盖子目录
     -y, --yes         跳过"按 Enter 确认"提示，打开浏览器后直接提取
+    --profile codex   只生成专供 Codex 使用的精简上下文包
+    --with-codex      在完整结果旁额外生成 Codex 精简上下文包
     -h, --help        显示帮助
 
   示例:
     nexpage https://stripe.com
     nexpage https://stripe.com -o ~/Desktop/stripe-ds
+    nexpage https://stripe.com --pick-output
     nexpage https://uiverse.io/elements -y
+    nexpage https://stripe.com --pick-output --profile codex
+    nexpage https://stripe.com --with-codex
 `);
   process.exit(0);
 }
@@ -36,15 +42,24 @@ let rawUrl = args[0];
 if (!rawUrl.startsWith('http')) rawUrl = `https://${rawUrl}`;
 try { new URL(rawUrl); } catch { console.error(' 错误：无效的网址'); process.exit(1); }
 
-const outFlag = args.indexOf('-o') > -1 ? args[args.indexOf('-o') + 1] : (args.indexOf('--out') > -1 ? args[args.indexOf('--out') + 1] : null);
 const skip = args.includes('-y') || args.includes('--yes');
-const outDir = resolve(outFlag || join('nexpage-output'));
+const codexProfile = isCodexProfile(args);
+const withCodex = isWithCodex(args);
+let output;
+try {
+  output = resolveOutputDirectory({ args, url: rawUrl });
+} catch (error) {
+  console.error(`  错误：${error.message}`);
+  process.exit(1);
+}
+const outDir = output.directory;
 const hostname = new URL(rawUrl).hostname.replace(/^www\./, '').replace(/\./g, '-');
 mkdirSync(outDir, { recursive: true });
 
 console.log('');
 console.log('  nexpage');
 console.log(`  ${rawUrl}`);
+if (output.mode === 'picked') console.log(`  保存到 ${outDir}`);
 console.log('');
 
 // ── Step 1: Open visible browser ──
@@ -71,7 +86,10 @@ if (!skip) {
 
 // ── Step 3: Screenshot ──
 console.log('  ◐ 正在截图...');
-const screenshotPath = join(outDir, 'page-screenshot.png');
+const screenshotPath = codexProfile
+  ? join(outDir, 'codex-context', 'reference.png')
+  : join(outDir, 'page-screenshot.png');
+if (codexProfile) mkdirSync(join(outDir, 'codex-context'), { recursive: true });
 let screenshot = { ok: false };
 try {
   await page.screenshot({ path: screenshotPath, fullPage: false, type: 'png' });
@@ -110,6 +128,7 @@ const p = hostname;
 function w(name, content) {
   try { writeFileSync(join(outDir, name), typeof content === 'string' ? content : JSON.stringify(content, null, 2)); } catch {}
 }
+if (!codexProfile) {
 const dl = await import('../src/index.js');
 w(`${p}-design-tokens.json`, dl.formatDtcgTokens(design));
 w(`${p}-variables.css`, dl.formatCssVars(design));
@@ -150,12 +169,24 @@ if (design.formStates) w(`${p}-form-states.json`, design.formStates);
 if (design.darkModePaired?.available) w(`${p}-dark-mode.json`, design.darkModePaired);
 w(`${p}-mcp.json`, { colors: { all: design.colors?.all || [] }, regions: design.regions || [], componentClusters: design.componentClusters || [], accessibility: { remediation: design.accessibility?.remediation || [] }, cssHealth: design.cssHealth || null });
 writeFileSync(join(outDir, 'result.json'), JSON.stringify(design, null, 2));
+}
+
+let codexPack = null;
+if (codexProfile || withCodex) {
+  codexPack = writeCodexContextPack({
+    design,
+    outDir,
+    screenshotPath: screenshot.ok ? screenshotPath : null,
+    hostname,
+  });
+  console.log(`  ✓ Codex 上下文包已生成 (${codexPack.files.length} 个文件)`);
+}
 
 // ── Summary ──
 const s = design.score || {};
 const c = design.colors || {};
 const t = design.typography || {};
-const files = readdirSync(outDir).length;
+const files = codexProfile && codexPack ? codexPack.files.length : readdirSync(outDir).length;
 
 const gradeIcon = s.grade === 'A' ? '●' : s.grade === 'B' ? '◉' : '○';
 console.log('  ══════════════════════════════════════');
@@ -175,4 +206,5 @@ if (warnings.length) {
 }
 console.log('  ──────────────────────────────────────');
 console.log(`  ✓ 已保存到 ${outDir}/`);
+if (codexPack) console.log(`  ✓ Codex 使用目录 ${codexPack.directory}/`);
 console.log('');

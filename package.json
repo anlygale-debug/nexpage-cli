@@ -6,6 +6,9 @@
   "bin": {
     "nexpage": "./bin/nexpage.mjs"
   },
+  "scripts": {
+    "test": "node --test"
+  },
   "dependencies": {
     "playwright": "^1.42.0"
   },

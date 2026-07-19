@@ -160,4 +160,12 @@ export { formatWordPress } from './formatters/wordpress.js';
 export { formatVueTheme } from './formatters/vue-theme.js';
 export { formatSvelteTheme } from './formatters/svelte-theme.js';
 export { formatMotionTokens } from './formatters/motion-tokens.js';
+export {
+  formatCodexContext,
+  buildCodexContextFiles,
+  isCodexProfile,
+  isWithCodex,
+  writeCodexContextPack,
+} from './formatters/codex-context.js';
+export { chooseOutputFolder, resolveOutputDirectory } from './output-path.js';
 export { buildPromptPack, formatV0Prompt, formatLovablePrompt, formatCursorPrompt, formatClaudeArtifactPrompt } from './formatters/prompt-pack.js';
