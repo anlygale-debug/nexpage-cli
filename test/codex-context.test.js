@@ -4,9 +4,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import * as nexpage from '../src/index.js';
+import { greptileEvidence } from './fixtures/codex-fixture.js';
 
 test('exports a Codex context formatter', () => {
   assert.equal(typeof nexpage.formatCodexContext, 'function');
+  assert.equal(typeof nexpage.formatVerifiedCodexContext, 'function');
 });
 
 function fixture(overrides = {}) {
@@ -91,49 +93,63 @@ function fixture(overrides = {}) {
   };
 }
 
+const verifiedOptions = {
+  hostname: 'example-test',
+  evidence: greptileEvidence,
+  fullPageCaptured: true,
+};
+
+function fixtureWithVerifiedMotion() {
+  return fixture({
+    motion: {
+      keyframes: [
+        { name: 'float-code', used: true },
+        { name: 'grid-drift', used: true },
+      ],
+    },
+  });
+}
+
 test('writes a self-contained CODEX.md without broken object serialization', () => {
-  const markdown = nexpage.formatCodexContext(fixture(), { hostname: 'example-test' });
+  const markdown = nexpage.formatCodexContext(fixture(), verifiedOptions);
 
   for (const heading of [
-    '# Example Product — Codex Design Context',
-    '## 使用顺序',
-    '## 视觉方向',
-    '## 颜色系统',
-    '## 排版系统',
-    '## 布局与间距',
-    '## 组件模式',
-    '## 页面结构参考',
-    '## Codex 实现规则',
-    '## 数据可信度与限制',
+    '# Example Product — Codex 视觉上下文',
+    '## 用途与边界',
+    '## Codex 行为规则',
+    '## 阅读顺序与证据优先级',
+    '## 已验证视觉语言',
+    '## 低可信候选',
+    '## 抽象视觉节奏',
+    '## 覆盖范围与限制',
   ]) {
     assert.match(markdown, new RegExp(heading.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   }
 
-  assert.match(markdown, /start.*4/);
+  assert.match(markdown, /#28e99f/);
   assert.doesNotMatch(markdown, /\[object Object\]|\bundefined\b|\bnull\b/);
   assert.doesNotMatch(markdown, /designlang/i);
 });
 
-test('marks weak primary-color inference as a candidate instead of a hard rule', () => {
+test('does not promote browser-default raw colors into verified context', () => {
   const design = fixture({
     colors: {
       ...fixture().colors,
-      primary: { hex: '#0000ee', count: 2, confidence: 0.95 },
+      all: [...fixture().colors.all, { hex: '#0000ee', count: 200 }],
     },
   });
 
-  const markdown = nexpage.formatCodexContext(design, { hostname: 'example-test' });
+  const files = nexpage.buildCodexContextFiles(design, verifiedOptions);
 
-  assert.match(markdown, /#0000ee/);
-  assert.match(markdown, /低可信候选/);
-  assert.match(markdown, /reference\.png/);
-  assert.doesNotMatch(markdown, /必须.*#0000ee/);
+  assert.doesNotMatch(files['CODEX.md'], /#0000ee/);
+  assert.doesNotMatch(files['tokens.json'], /#0000ee/);
+  assert.match(files['CODEX.md'], /低可信候选/);
 });
 
 test('builds the exact default Codex package and adds motion only when meaningful', () => {
   assert.equal(typeof nexpage.buildCodexContextFiles, 'function');
 
-  const withMotion = nexpage.buildCodexContextFiles(fixture(), { hostname: 'example-test' });
+  const withMotion = nexpage.buildCodexContextFiles(fixtureWithVerifiedMotion(), verifiedOptions);
   assert.deepEqual(Object.keys(withMotion).sort(), [
     'CODEX.md',
     'motion.json',
@@ -141,9 +157,7 @@ test('builds the exact default Codex package and adds motion only when meaningfu
     'variables.css',
   ]);
 
-  const withoutMotion = nexpage.buildCodexContextFiles(fixture({
-    motion: { durations: [], easings: [], springs: [], keyframes: [], scrollLinked: { present: false } },
-  }), { hostname: 'example-test' });
+  const withoutMotion = nexpage.buildCodexContextFiles(fixture({ motion: { keyframes: [] } }), verifiedOptions);
   assert.deepEqual(Object.keys(withoutMotion).sort(), [
     'CODEX.md',
     'tokens.json',
@@ -174,10 +188,10 @@ test('writes an isolated codex-context directory with a copied visual reference'
     writeFileSync(screenshotPath, 'fake-png');
 
     const result = nexpage.writeCodexContextPack({
-      design: fixture(),
+      design: fixtureWithVerifiedMotion(),
       outDir: root,
       screenshotPath,
-      hostname: 'example-test',
+      ...verifiedOptions,
     });
 
     assert.equal(result.directory, join(root, 'codex-context'));
@@ -219,7 +233,7 @@ test('accepts a screenshot already stored as codex-context/reference.png', () =>
   }
 });
 
-test('omits false-positive motion and preserves keyframes that are actually used', () => {
+test('omits unmatched motion and preserves rendered animations matched to used keyframes', () => {
   const falsePositive = fixture({
     motion: {
       durations: [],
@@ -229,7 +243,7 @@ test('omits false-positive motion and preserves keyframes that are actually used
       scrollLinked: { present: true, signals: ['view:none', 'scroll:none'] },
     },
   });
-  const falsePositiveFiles = nexpage.buildCodexContextFiles(falsePositive, { hostname: 'example-test' });
+  const falsePositiveFiles = nexpage.buildCodexContextFiles(falsePositive, verifiedOptions);
   assert.equal(Object.hasOwn(falsePositiveFiles, 'motion.json'), false);
 
   const usedKeyframe = fixture({
@@ -237,54 +251,37 @@ test('omits false-positive motion and preserves keyframes that are actually used
       durations: [],
       easings: [],
       springs: [],
-      keyframes: [{
-        name: 'heroReveal',
-        used: true,
-        usageCount: 2,
-        propertiesAnimated: ['opacity', 'transform'],
-        steps: [{ offset: '0%', style: 'opacity: 0' }, { offset: '100%', style: 'opacity: 1' }],
-      }],
-      scrollLinked: { present: false, signals: [] },
-      feel: 'calm',
+      keyframes: [{ name: 'float-code', used: true }],
     },
   });
-  const usedFiles = nexpage.buildCodexContextFiles(usedKeyframe, { hostname: 'example-test' });
+  const usedFiles = nexpage.buildCodexContextFiles(usedKeyframe, verifiedOptions);
   const motion = JSON.parse(usedFiles['motion.json']);
-  assert.equal(motion.keyframes[0].name, 'heroReveal');
-  assert.equal(motion.keyframes[0].usageCount, 2);
+  assert.equal(motion.animations[0].name, 'float-code');
+  assert.equal(motion.animations[0].target, '.code-window');
 });
 
 test('uses a body-like typography sample instead of the largest heading in tokens.json', () => {
-  const files = nexpage.buildCodexContextFiles(fixture(), { hostname: 'example-test' });
+  const files = nexpage.buildCodexContextFiles(fixture(), verifiedOptions);
   const tokens = JSON.parse(files['tokens.json']);
-  assert.equal(tokens.semantic.typography.body.$value.fontSize, '16px');
-  assert.equal(tokens.semantic.typography.body.$value.fontWeight, '400');
+  assert.equal(tokens.semantic.typography.body.$value, '{typography.body}');
+  assert.equal(tokens.typography.body.$value.fontFamily, 'DM Sans');
+  assert.equal(tokens.typography.body.$value.fontSize, '18px');
 });
 
-test('keeps every CSS custom property name unique in the Codex package', () => {
-  const design = fixture({
-    borders: {
-      radii: [
-        { label: 'md', value: 8 },
-        { label: 'md', value: 12 },
-        { label: 'full', value: 999 },
-      ],
-    },
-  });
-  const files = nexpage.buildCodexContextFiles(design, { hostname: 'example-test' });
+test('keeps every verified CSS custom property name unique', () => {
+  const files = nexpage.buildCodexContextFiles(fixture(), verifiedOptions);
   const names = [...files['variables.css'].matchAll(/^\s*(--[a-z0-9-]+):/gim)].map(match => match[1]);
   assert.equal(new Set(names).size, names.length);
-  assert.match(files['variables.css'], /--radius-md: 8px/);
-  assert.match(files['variables.css'], /--radius-md-2: 12px/);
+  assert.match(files['variables.css'], /--color-action-primary: #28e99f/);
+  assert.match(files['variables.css'], /--shape-action-primary-clip-path: polygon\(/);
 });
 
-test('calls out browser-default colors wherever they appear as semantic candidates', () => {
-  const design = fixture({
-    colors: {
-      ...fixture().colors,
-      secondary: { hex: '#0000ee', count: 200, confidence: 0.9 },
-    },
+test('facade forwards partial full-page coverage into CODEX limitations', () => {
+  const markdown = nexpage.formatCodexContext(fixture(), {
+    ...verifiedOptions,
+    fullPageCaptured: false,
+    fullPageError: 'page height exceeded limit',
   });
-  const markdown = nexpage.formatCodexContext(design, { hostname: 'example-test' });
-  assert.match(markdown, /#0000ee.*浏览器默认色/);
+  assert.match(markdown, /只覆盖桌面首屏/);
+  assert.match(markdown, /page height exceeded limit/);
 });

@@ -148,6 +148,13 @@ export { extractVoice } from './extractors/voice.js';
 export { extractComponentAnatomy, formatAnatomyStubs } from './extractors/component-anatomy.js';
 export { collectCodexEvidence } from './codex/collect-evidence.js';
 export { buildVerifiedVisualModel } from './codex/verified-model.js';
+export {
+  buildVerifiedContextFiles,
+  formatVerifiedCodexContext,
+  formatVerifiedTokens,
+  formatVerifiedCss,
+  formatVerifiedMotion,
+} from './codex/format-context.js';
 
 // Formatters
 export { formatTokens } from './formatters/tokens.js';
