@@ -146,6 +146,38 @@ function rejectSemiTransparentColor(rejected, path, value) {
   return true;
 }
 
+function evidenceOpacity(item) {
+  return finiteNumber(
+    item?.style?.effectiveOpacity
+      ?? item?.effectiveOpacity
+      ?? item?.style?.renderedOpacity
+      ?? item?.renderedOpacity
+      ?? item?.style?.opacity,
+  );
+}
+
+function rejectNonOpaqueEvidence(rejected, path, item) {
+  const opacity = evidenceOpacity(item);
+  if (opacity === null || opacity >= 1) return false;
+  addRejected(
+    rejected,
+    `${path}.style.effectiveOpacity`,
+    opacity,
+    `effective opacity ${Number(opacity.toFixed(3))} is below 1 and cannot support a fully opaque verified semantic`,
+  );
+  return true;
+}
+
+function visibleOpaqueEvidence(evidence, key, rejected) {
+  const accepted = [];
+  for (const [index, item] of evidenceList(evidence, key).entries()) {
+    if (!isVisible(item)) continue;
+    if (rejectNonOpaqueEvidence(rejected, `evidence.${key}[${index}]`, item)) continue;
+    accepted.push(item);
+  }
+  return accepted;
+}
+
 function selectActions(actions, rejected) {
   const groups = new Map();
   for (const [index, action] of actions.entries()) {
@@ -348,9 +380,9 @@ function buildSpacing(design, rejected) {
   return [...accepted.values()].sort((a, b) => a.value - b.value);
 }
 
-function buildSurfaces(evidence, rejected) {
+function buildSurfaces(items, rejected) {
   const surfaces = [];
-  for (const [index, item] of evidenceList(evidence, 'surfaces').entries()) {
+  for (const [index, item] of items.entries()) {
     rejectSemiTransparentColor(
       rejected,
       `evidence.surfaces[${index}].style.backgroundColor`,
@@ -517,11 +549,14 @@ export function buildVerifiedVisualModel(design, evidence = {}, options = {}) {
   const sourceDesign = design && typeof design === 'object' ? design : {};
   const rejected = [];
   const candidates = { colors: [], typography: [], shapes: [], rhythm: [] };
-  const actionEvidenceItems = evidenceList(evidence, 'actions');
+  const actionEvidenceItems = visibleOpaqueEvidence(evidence, 'actions', rejected);
   const actions = selectActions(actionEvidenceItems, rejected);
   const primaryAction = actions.find(group => group.isVerified) || null;
-  const surfaces = buildSurfaces(evidence, rejected);
-  const cards = evidenceList(evidence, 'cards').filter(isVisible);
+  const surfaces = buildSurfaces(visibleOpaqueEvidence(evidence, 'surfaces', rejected), rejected);
+  const cards = visibleOpaqueEvidence(evidence, 'cards', rejected);
+  const headings = visibleOpaqueEvidence(evidence, 'headings', rejected);
+  const bodyText = visibleOpaqueEvidence(evidence, 'bodyText', rejected);
+  const labels = visibleOpaqueEvidence(evidence, 'labels', rejected);
 
   const model = {
     kind: 'nexpage-verified-visual-model',
@@ -556,8 +591,6 @@ export function buildVerifiedVisualModel(design, evidence = {}, options = {}) {
     candidates.colors.push(verified(group.background, group.isVerified ? 0.76 : 0.58, actionEvidence(group)));
   }
 
-  const headings = evidenceList(evidence, 'headings').filter(isVisible);
-  const bodyText = evidenceList(evidence, 'bodyText').filter(isVisible);
   headings.forEach((item, index) => rejectSemiTransparentColor(
     rejected,
     `evidence.headings[${index}].style.color`,
@@ -601,7 +634,7 @@ export function buildVerifiedVisualModel(design, evidence = {}, options = {}) {
     model.candidates.colors = model.candidates.colors.filter(item => item.value !== secondaryAction.background);
   }
 
-  model.verified.typography = buildTypography(evidence, candidates.typography);
+  model.verified.typography = buildTypography({ headings, bodyText, labels }, candidates.typography);
   model.verified.spacing = buildSpacing(sourceDesign, rejected);
 
   const primaryShape = buildRoleActionShape(primaryAction, 'primary');

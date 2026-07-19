@@ -49,7 +49,6 @@ export async function collectCodexEvidence(page) {
       return `${tag}:nth-of-type(${index})`;
     };
     const selectorFor = element => {
-      if (element.id) return `#${CSS.escape(element.id)}`;
       const identifiesElement = selector => {
         try {
           const matches = document.querySelectorAll(selector);
@@ -58,6 +57,11 @@ export async function collectCodexEvidence(page) {
           return false;
         }
       };
+
+      if (element.id) {
+        const idSelector = `#${CSS.escape(element.id)}`;
+        if (identifiesElement(idSelector)) return idSelector;
+      }
 
       if (typeof element.getAttribute === 'function') {
         for (const attribute of ['data-testid', 'data-test', 'data-qa', 'data-component', 'data-motion', 'data-animation', 'data-role']) {
@@ -77,12 +81,21 @@ export async function collectCodexEvidence(page) {
       }
 
       const path = [];
-      for (let current = element; current && path.length < 6; current = current.parentElement) {
+      for (let current = element; current; current = current.parentElement) {
         path.unshift(pathSegment(current));
         const selector = path.join(' > ');
         if (identifiesElement(selector)) return selector;
       }
-      return path.join(' > ');
+      return null;
+    };
+
+    const effectiveOpacity = element => {
+      let opacity = 1;
+      for (let current = element; current; current = current.parentElement) {
+        const value = Number.parseFloat(getComputedStyle(current).opacity || '1');
+        if (Number.isFinite(value)) opacity *= value;
+      }
+      return opacity;
     };
 
     const snapshotStyle = element => {
@@ -99,6 +112,8 @@ export async function collectCodexEvidence(page) {
         borderWidth: style.borderWidth,
         borderColor: style.borderColor,
         clipPath: style.clipPath,
+        opacity: style.opacity,
+        effectiveOpacity: effectiveOpacity(element),
       };
     };
 
@@ -173,29 +188,36 @@ export async function collectCodexEvidence(page) {
       .slice(0, limits.surfaces)
       .map((element, order) => {
         const rect = element.getBoundingClientRect();
-        const style = getComputedStyle(element);
+        const style = snapshotStyle(element);
         return {
           selector: selectorFor(element),
           order,
           rect: { width: rect.width, height: rect.height },
-          style: { backgroundColor: style.backgroundColor, color: style.color },
+          style: {
+            backgroundColor: style.backgroundColor,
+            color: style.color,
+            opacity: style.opacity,
+            effectiveOpacity: style.effectiveOpacity,
+          },
         };
       });
 
     evidence.animations = document.getAnimations()
-      .filter(animation => animation.effect && animation.effect.target instanceof Element)
-      .slice(0, limits.animations)
-      .map(animation => {
+      .flatMap(animation => {
+        if (!animation.effect || !(animation.effect.target instanceof Element)) return [];
+        const target = selectorFor(animation.effect.target);
+        if (!target) return [];
         const timing = animation.effect.getTiming();
-        return {
+        return [{
           name: animation.animationName || animation.id || 'unnamed',
-          target: selectorFor(animation.effect.target),
+          target,
           duration: timing.duration,
           easing: timing.easing,
           iterations: timing.iterations,
           playState: animation.playState,
-        };
-      });
+        }];
+      })
+      .slice(0, limits.animations);
 
     return evidence;
   });

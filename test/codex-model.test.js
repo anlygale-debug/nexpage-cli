@@ -14,6 +14,21 @@ const design = {
   sectionRoles: { readingOrder: ['hero', 'testimonials', 'faq'] },
 };
 
+function evidenceWithOpacity({ opacity, effectiveOpacity }) {
+  const applyOpacity = items => items.map(item => ({
+    ...item,
+    style: { ...item.style, opacity, effectiveOpacity },
+  }));
+  return {
+    ...greptileEvidence,
+    headings: applyOpacity(greptileEvidence.headings),
+    bodyText: applyOpacity(greptileEvidence.bodyText),
+    actions: applyOpacity(greptileEvidence.actions),
+    cards: applyOpacity(greptileEvidence.cards),
+    surfaces: applyOpacity(greptileEvidence.surfaces),
+  };
+}
+
 test('model promotes rendered semantic evidence instead of raw frequency', () => {
   const model = buildVerifiedVisualModel(design, greptileEvidence, {
     hostname: 'greptile-com', fullPageCaptured: true,
@@ -148,6 +163,40 @@ test('model rejects semi-transparent light and dark surfaces as verified surface
   assert.equal(model.verified.colors.surface, undefined);
   assert.deepEqual(model.verified.materials, []);
   assert.ok(model.rejected.some(item => item.path.includes('surfaces') && /alpha|半透明/i.test(item.reason)));
+});
+
+test('model rejects self-opacity evidence for ink, surfaces, materials, actions, and cards', () => {
+  const model = buildVerifiedVisualModel(
+    design,
+    evidenceWithOpacity({ opacity: '0.5', effectiveOpacity: 0.5 }),
+    { fullPageCaptured: true },
+  );
+
+  assert.equal(model.verified.colors.ink, undefined);
+  assert.equal(model.verified.colors.surface, undefined);
+  assert.equal(model.verified.colors.actionPrimary, undefined);
+  assert.deepEqual(model.verified.materials, []);
+  assert.deepEqual(model.verified.components.actions, []);
+  assert.deepEqual(model.verified.components.cards, []);
+  for (const key of ['headings', 'bodyText', 'actions', 'cards', 'surfaces']) {
+    assert.ok(model.rejected.some(item => item.path.includes(`evidence.${key}`) && /effective opacity/i.test(item.reason)));
+  }
+});
+
+test('model rejects ancestor-opacity evidence for ink, surfaces, materials, actions, and cards', () => {
+  const model = buildVerifiedVisualModel(
+    design,
+    evidenceWithOpacity({ opacity: '1', effectiveOpacity: 0.5 }),
+    { fullPageCaptured: true },
+  );
+
+  assert.equal(model.verified.colors.ink, undefined);
+  assert.equal(model.verified.colors.surface, undefined);
+  assert.equal(model.verified.colors.actionPrimary, undefined);
+  assert.deepEqual(model.verified.materials, []);
+  assert.deepEqual(model.verified.components.actions, []);
+  assert.deepEqual(model.verified.components.cards, []);
+  assert.ok(model.rejected.some(item => item.path.includes('surfaces') && /effective opacity 0\.5/i.test(item.reason)));
 });
 
 test('model rejects a semi-transparent raw palette entry without creating an opaque candidate', () => {
