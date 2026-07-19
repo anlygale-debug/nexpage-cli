@@ -55,6 +55,7 @@ function isBalancedCssScalar(value) {
   let quote = null;
   let escaped = false;
   let parentheses = 0;
+  let brackets = 0;
 
   for (const character of value) {
     if (quote) {
@@ -75,10 +76,15 @@ function isBalancedCssScalar(value) {
     } else if (character === ')') {
       if (parentheses === 0) return false;
       parentheses -= 1;
+    } else if (character === '[') {
+      brackets += 1;
+    } else if (character === ']') {
+      if (brackets === 0) return false;
+      brackets -= 1;
     }
   }
 
-  return quote === null && parentheses === 0;
+  return quote === null && parentheses === 0 && brackets === 0;
 }
 
 function validateCss(source, errors) {
@@ -121,7 +127,7 @@ function validateCss(source, errors) {
       errors.push(`variables.css 的 --${name} 必须使用非空标量值。`);
     }
     if (!isBalancedCssScalar(value)) {
-      errors.push(`variables.css 的 --${name} 标量值包含未配对的引号或括号。`);
+      errors.push(`variables.css 的 --${name} 标量值包含未配对的引号、圆括号或方括号。`);
     }
     if (/\[object Object\]|\bundefined\b|\bnull\b/i.test(value)) {
       const invalid = value.match(/\[object Object\]|\bundefined\b|\bnull\b/i)?.[0];
@@ -133,6 +139,28 @@ function validateCss(source, errors) {
     names.add(name);
     position = declaration.lastIndex;
   }
+}
+
+function stripFencedCodeBlocks(markdown) {
+  const lines = markdown.split('\n');
+  let fence = null;
+
+  return lines.map(line => {
+    if (fence) {
+      const closing = line.match(/^\s{0,3}(`{3,}|~{3,})\s*$/);
+      if (closing && closing[1][0] === fence[0] && closing[1].length >= fence.length) {
+        fence = null;
+      }
+      return '';
+    }
+
+    const opening = line.match(/^\s{0,3}(`{3,}|~{3,})/);
+    if (opening) {
+      fence = opening[1];
+      return '';
+    }
+    return line;
+  }).join('\n');
 }
 
 function getMarkdownSectionBody(markdown, titlePattern) {
@@ -147,6 +175,7 @@ function getMarkdownSectionBody(markdown, titlePattern) {
 }
 
 function validateCodexMarkdown(markdown, fullPageExists, errors) {
+  const prose = stripFencedCodeBlocks(markdown);
   const requiredSections = [
     ['用途与边界', /^用途与边界$/],
     ['行为规则', /^(?:Codex\s*)?行为规则$/i],
@@ -155,7 +184,7 @@ function validateCodexMarkdown(markdown, fullPageExists, errors) {
   const sections = new Map();
 
   for (const [name, titlePattern] of requiredSections) {
-    const body = getMarkdownSectionBody(markdown, titlePattern);
+    const body = getMarkdownSectionBody(prose, titlePattern);
     sections.set(name, body);
     if (body === null) {
       errors.push(`CODEX.md 缺少“${name}”部分。`);
@@ -165,24 +194,40 @@ function validateCodexMarkdown(markdown, fullPageExists, errors) {
   }
 
   const directiveText = `${sections.get('用途与边界') || ''}\n${sections.get('行为规则') || ''}`;
-  const copyConflict = /(?:不(?:复刻|复制)[^。\n]{0,24}(?:取消|解除|无效)|(?:可以|允许|直接)[^。\n]{0,8}(?:复刻|复制)(?:来源)?页面)/;
-  const waitConflict = /(?:不要|无需|不用|跳过|取消)[^。\n]{0,8}等待[^。\n]{0,24}(?:需求|用户)/;
+  const directiveLines = directiveText
+    .split('\n')
+    .filter(line => line.trim() && !/^(?: {4}|\t)/.test(line) && !line.includes('`'))
+    .map(line => line.trim());
+  const invalidation = /废止|作废|取消|解除|无效|不再适用/;
+  const permissionToCopy = /(?:(?:可以|允许|准许)[^。\n]{0,12}(?:复制|复刻)|(?:复制|复刻)[^。\n]{0,12}(?:可以|允许|准许))/;
+  const invalidationConflict = directiveLines.some(line => invalidation.test(line));
+  const copyConflict = directiveLines.some(line =>
+    (/(?:复制|复刻)/.test(line) && invalidation.test(line)) || permissionToCopy.test(line));
+  const waitConflict = directiveLines.some(line =>
+    (/(?:等待|新产品需求)/.test(line) && invalidation.test(line))
+    || /(?:不要|无需|不用|跳过)[^。\n]{0,8}等待/.test(line)
+    || /(?:立即|马上)开始/.test(line));
+  const copyDirective = /^(?:-\s+)?[^。\n]*(?:不要复刻来源页面|不用于复刻来源页面|不复制来源品牌[^。\n]*)。?$/;
+  const waitDirective = /^(?:-\s+)?(?:等待新产品需求|如果尚未收到新产品需求，[^。\n]*等待用户继续说明需求)。?$/;
 
-  if (copyConflict.test(directiveText)) {
+  if (invalidationConflict) {
+    errors.push('CODEX.md 包含使规则失效的矛盾指令。');
+  }
+  if (copyConflict) {
     errors.push('CODEX.md 包含“可以复制”或取消不复刻限制的矛盾指令。');
   }
-  if (waitConflict.test(directiveText)) {
+  if (waitConflict) {
     errors.push('CODEX.md 包含“不要等待”需求的矛盾指令。');
   }
-  if (!/(?:不要|不得|不应|禁止|严禁)(?:直接)?(?:复刻|复制)/.test(directiveText)) {
+  if (!directiveLines.some(line => copyDirective.test(line))) {
     errors.push('CODEX.md 必须明确不复刻或不复制来源页面。');
   }
-  if (!/等待(?:用户(?:继续说明)?|新产品)?需求/.test(directiveText)) {
+  if (!directiveLines.some(line => waitDirective.test(line))) {
     errors.push('CODEX.md 必须明确等待新产品需求。');
   }
 
   if (fullPageExists === false) {
-    const hasCoverageLimit = /只覆盖[^\n。]*(?:桌面)?首屏[^\n。]*不(?:得|要|应)?推断[^\n。]*(?:完整页面|页面节奏)/.test(markdown);
+    const hasCoverageLimit = /只覆盖[^\n。]*(?:桌面)?首屏[^\n。]*不(?:得|要|应)?推断[^\n。]*(?:完整页面|页面节奏)/.test(prose);
     if (!hasCoverageLimit) {
       errors.push('缺少完整页面截图时，CODEX.md 必须说明只覆盖桌面首屏且不得推断完整页面节奏。');
     }
