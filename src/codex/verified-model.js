@@ -32,7 +32,7 @@ function normalizeColor(value) {
     const alpha = rgb[4] === undefined
       ? 1
       : (rgb[4].endsWith('%') ? Number.parseFloat(rgb[4]) / 100 : Number.parseFloat(rgb[4]));
-    if (!Number.isFinite(alpha) || alpha <= 0 || alpha > 1) return null;
+    if (!Number.isFinite(alpha) || alpha !== 1) return null;
     const channels = rgb.slice(1, 4).map(channelToHex);
     return channels.every(Boolean) ? `#${channels.join('')}` : null;
   }
@@ -41,11 +41,11 @@ function normalizeColor(value) {
     return `#${[...input.slice(1)].map(char => char.repeat(2)).join('')}`;
   }
   if (/^#[\da-f]{4}$/.test(input)) {
-    if (input[4] === '0') return null;
+    if (input[4] !== 'f') return null;
     return `#${[...input.slice(1, 4)].map(char => char.repeat(2)).join('')}`;
   }
   if (/^#[\da-f]{6}$/.test(input)) return input;
-  if (/^#[\da-f]{8}$/.test(input)) return input.endsWith('00') ? null : input.slice(0, 7);
+  if (/^#[\da-f]{8}$/.test(input)) return input.endsWith('ff') ? input.slice(0, 7) : null;
   return null;
 }
 
@@ -134,9 +134,23 @@ function addRejected(rejected, path, value, reason) {
   rejected.push({ path, value: Number.isFinite(value) || typeof value === 'string' ? value : null, reason });
 }
 
-function selectActions(actions) {
+function rejectSemiTransparentColor(rejected, path, value) {
+  const alpha = colorAlpha(value);
+  if (alpha === null || alpha <= 0 || alpha >= 1) return false;
+  addRejected(
+    rejected,
+    path,
+    value,
+    `semi-transparent color with alpha ${Number(alpha.toFixed(3))} cannot be promoted to an opaque verified semantic`,
+  );
+  return true;
+}
+
+function selectActions(actions, rejected) {
   const groups = new Map();
-  for (const action of actions.filter(isVisible)) {
+  for (const [index, action] of actions.entries()) {
+    if (!isVisible(action)) continue;
+    rejectSemiTransparentColor(rejected, `evidence.actions[${index}].style.backgroundColor`, action.style?.backgroundColor);
     const background = usableOpaqueColor(action.style?.backgroundColor);
     if (!background) continue;
     const width = finiteNumber(action.rect?.width);
@@ -185,7 +199,7 @@ function normalizedShape(action) {
   return Object.keys(value).length ? value : null;
 }
 
-function buildActionShape(actions, primaryAction) {
+function groupActionShapes(actions) {
   const groups = new Map();
   for (const action of actions.filter(isVisible)) {
     const value = normalizedShape(action);
@@ -195,26 +209,39 @@ function buildActionShape(actions, primaryAction) {
     current.actions.push(action);
     groups.set(key, current);
   }
+  return [...groups.values()];
+}
 
-  const primaryActions = new Set(primaryAction?.actions || []);
-  for (const group of groups.values()) {
-    group.hasMainAction = group.actions.some(action => action.scope === 'main');
-    group.primaryInstances = group.actions.filter(action => primaryActions.has(action)).length;
-    group.score = (group.actions.length * 4) + (group.primaryInstances * 3) + (group.hasMainAction ? 2 : 0);
-  }
-
-  const eligible = [...groups.values()]
-    .filter(group => group.actions.length > 1 || group.hasMainAction)
-    .sort((a, b) => b.score - a.score);
+function buildRoleActionShape(actionGroup, role) {
+  if (!actionGroup) return null;
+  const eligible = groupActionShapes(actionGroup.actions)
+    .filter(group => group.actions.length > 1
+      || (actionGroup.actions.length === 1 && group.actions[0]?.scope === 'main'))
+    .sort((a, b) => b.actions.length - a.actions.length);
   const selected = eligible[0];
   if (!selected) return null;
   return verified(selected.value, selected.actions.length > 1 ? 0.98 : 0.86, {
     source: 'rendered actions',
+    role,
     instances: selected.actions.length,
     rationale: selected.actions.length > 1
-      ? 'shape repeated across visible actions'
-      : 'explicit shape on the main action',
+      ? `shape repeated within the ${role} action role`
+      : `explicit shape on the main ${role} action`,
   });
+}
+
+function addActionShapeCandidates(actions, verifiedShapes, candidates) {
+  const accepted = new Set(Object.values(verifiedShapes).map(entry => JSON.stringify(entry.value)));
+  for (const group of groupActionShapes(actions)) {
+    const key = JSON.stringify(group.value);
+    if (accepted.has(key)) continue;
+    const hasMainAction = group.actions.some(action => action.scope === 'main');
+    if (group.actions.length < 2 && !hasMainAction) continue;
+    candidates.push(verified(group.value, group.actions.length > 1 ? 0.68 : 0.55, {
+      source: 'rendered actions without a verified semantic color role',
+      instances: group.actions.length,
+    }));
+  }
 }
 
 function usesMonoFamily(item) {
@@ -321,16 +348,126 @@ function buildSpacing(design, rejected) {
   return [...accepted.values()].sort((a, b) => a.value - b.value);
 }
 
-function buildSurfaces(evidence) {
+function buildSurfaces(evidence, rejected) {
   const surfaces = [];
-  for (const item of evidenceList(evidence, 'surfaces')) {
-    const background = usableColor(item?.style?.backgroundColor);
+  for (const [index, item] of evidenceList(evidence, 'surfaces').entries()) {
+    rejectSemiTransparentColor(
+      rejected,
+      `evidence.surfaces[${index}].style.backgroundColor`,
+      item?.style?.backgroundColor,
+    );
+    rejectSemiTransparentColor(
+      rejected,
+      `evidence.surfaces[${index}].style.color`,
+      item?.style?.color,
+    );
+    const background = usableOpaqueColor(item?.style?.backgroundColor);
     if (!background) continue;
-    const foreground = usableColor(item?.style?.color);
+    const foreground = usableOpaqueColor(item?.style?.color);
     const area = (finiteNumber(item?.rect?.width) || 0) * (finiteNumber(item?.rect?.height) || 0);
     surfaces.push({ item, background, foreground, area, ...colorMetrics(background) });
   }
   return surfaces;
+}
+
+function buildSurfaceMaterials(surfaces) {
+  const colorOccurrences = new Map();
+  for (const surface of surfaces) {
+    for (const color of [surface.background, surface.foreground].filter(Boolean)) {
+      colorOccurrences.set(color, (colorOccurrences.get(color) || 0) + 1);
+    }
+  }
+
+  const groups = new Map();
+  for (const surface of surfaces) {
+    const role = surface.lightness >= 0.55 ? 'surfaceLight' : 'surfaceDark';
+    const key = JSON.stringify([role, surface.background, surface.foreground || '']);
+    const current = groups.get(key) || {
+      role,
+      background: surface.background,
+      foreground: surface.foreground,
+      surfaces: [],
+      area: 0,
+    };
+    current.surfaces.push(surface);
+    current.area += surface.area;
+    groups.set(key, current);
+  }
+
+  const selectedByRole = new Map();
+  for (const group of groups.values()) {
+    const supportOccurrences = colorOccurrences.get(group.background) || 0;
+    if (group.surfaces.length < 2 && supportOccurrences < 2) continue;
+    const current = selectedByRole.get(group.role);
+    const score = (group.surfaces.length * 10) + Math.log10(group.area + 1);
+    if (!current || score > current.score) selectedByRole.set(group.role, { ...group, score, supportOccurrences });
+  }
+
+  return [...selectedByRole.values()].map(group => {
+    const value = { role: group.role, background: group.background };
+    if (group.foreground) value.foreground = group.foreground;
+    return verified(value, group.surfaces.length > 1 ? 0.97 : 0.92, {
+      source: 'rendered surface material supported by repeated color evidence',
+      instances: group.surfaces.length,
+      supportOccurrences: group.supportOccurrences,
+      selectors: group.surfaces.map(surface => surface.item.selector).filter(Boolean),
+    });
+  });
+}
+
+function buildActionComponent(actionGroup, role, shape) {
+  if (!actionGroup || actionGroup.actions.length < 2) return null;
+  const value = { role, background: actionGroup.background };
+  const foregrounds = actionGroup.actions
+    .map(action => usableOpaqueColor(action.style?.color))
+    .filter(color => color && color !== actionGroup.background);
+  const foreground = foregrounds.find(color => foregrounds.filter(item => item === color).length > 1)
+    || (actionGroup.actions.length === 1 ? foregrounds[0] : null);
+  if (foreground) value.foreground = foreground;
+  if (shape) value.shape = shape.value;
+  return verified(value, actionGroup.actions.length > 1 ? 0.97 : 0.86, {
+    ...actionEvidence(actionGroup),
+    role,
+  });
+}
+
+function buildCardComponents(cards, rejected) {
+  const groups = new Map();
+  for (const [index, card] of cards.entries()) {
+    for (const [property, value] of [
+      ['backgroundColor', card.style?.backgroundColor],
+      ['color', card.style?.color],
+      ['borderColor', card.style?.borderColor],
+    ]) {
+      rejectSemiTransparentColor(rejected, `evidence.cards[${index}].style.${property}`, value);
+    }
+
+    const background = usableOpaqueColor(card.style?.backgroundColor);
+    if (!background) continue;
+    const value = { background };
+    const foreground = usableOpaqueColor(card.style?.color);
+    if (foreground) value.foreground = foreground;
+    const borderWidth = finiteNumber(card.style?.borderWidth);
+    const borderColor = usableOpaqueColor(card.style?.borderColor);
+    if (borderWidth !== null && borderWidth > 0 && borderColor) {
+      value.border = { width: borderWidth, color: borderColor };
+    }
+    const shape = normalizedShape(card);
+    if (shape) value.shape = shape;
+
+    const key = JSON.stringify(value);
+    const current = groups.get(key) || { value, cards: [] };
+    current.cards.push(card);
+    groups.set(key, current);
+  }
+
+  return [...groups.values()]
+    .filter(group => group.cards.length > 1)
+    .map(group => verified(group.value, 0.96, {
+      source: 'repeated rendered cards',
+      instances: group.cards.length,
+      selectors: group.cards.map(card => card.selector).filter(Boolean),
+    }));
 }
 
 function buildMotion(design, evidence) {
@@ -380,9 +517,10 @@ export function buildVerifiedVisualModel(design, evidence = {}, options = {}) {
   const sourceDesign = design && typeof design === 'object' ? design : {};
   const rejected = [];
   const candidates = { colors: [], typography: [], shapes: [], rhythm: [] };
-  const actions = selectActions(evidenceList(evidence, 'actions'));
+  const actionEvidenceItems = evidenceList(evidence, 'actions');
+  const actions = selectActions(actionEvidenceItems, rejected);
   const primaryAction = actions.find(group => group.isVerified) || null;
-  const surfaces = buildSurfaces(evidence);
+  const surfaces = buildSurfaces(evidence, rejected);
   const cards = evidenceList(evidence, 'cards').filter(isVisible);
 
   const model = {
@@ -420,8 +558,18 @@ export function buildVerifiedVisualModel(design, evidence = {}, options = {}) {
 
   const headings = evidenceList(evidence, 'headings').filter(isVisible);
   const bodyText = evidenceList(evidence, 'bodyText').filter(isVisible);
-  const headingColors = new Set(headings.map(item => usableColor(item.style?.color)).filter(Boolean));
-  const sharedInk = bodyText.map(item => usableColor(item.style?.color)).find(color => color && headingColors.has(color));
+  headings.forEach((item, index) => rejectSemiTransparentColor(
+    rejected,
+    `evidence.headings[${index}].style.color`,
+    item.style?.color,
+  ));
+  bodyText.forEach((item, index) => rejectSemiTransparentColor(
+    rejected,
+    `evidence.bodyText[${index}].style.color`,
+    item.style?.color,
+  ));
+  const headingColors = new Set(headings.map(item => usableOpaqueColor(item.style?.color)).filter(Boolean));
+  const sharedInk = bodyText.map(item => usableOpaqueColor(item.style?.color)).find(color => color && headingColors.has(color));
   if (sharedInk) {
     model.verified.colors.ink = verified(sharedInk, 0.99, {
       source: 'rendered semantic text',
@@ -439,15 +587,7 @@ export function buildVerifiedVisualModel(design, evidence = {}, options = {}) {
   }
 
   const darkSurfaces = surfaces.filter(surface => surface.lightness < 0.55);
-  for (const surface of darkSurfaces) {
-    const value = { background: surface.background };
-    if (surface.foreground) value.foreground = surface.foreground;
-    model.verified.materials.push(verified(value, 0.96, {
-      source: 'rendered dark surface',
-      selector: surface.item.selector || '',
-      area: surface.area,
-    }));
-  }
+  model.verified.materials = buildSurfaceMaterials(surfaces);
 
   const secondaryAction = actions.find(group => group !== primaryAction
     && group.isVerified
@@ -464,8 +604,17 @@ export function buildVerifiedVisualModel(design, evidence = {}, options = {}) {
   model.verified.typography = buildTypography(evidence, candidates.typography);
   model.verified.spacing = buildSpacing(sourceDesign, rejected);
 
-  const actionShape = buildActionShape(evidenceList(evidence, 'actions'), primaryAction);
-  if (actionShape) model.verified.shapes.actionPrimary = actionShape;
+  const primaryShape = buildRoleActionShape(primaryAction, 'primary');
+  if (primaryShape) model.verified.shapes.actionPrimary = primaryShape;
+  const secondaryShape = buildRoleActionShape(secondaryAction, 'secondary');
+  if (secondaryShape) model.verified.shapes.actionSecondary = secondaryShape;
+  addActionShapeCandidates(actionEvidenceItems, model.verified.shapes, candidates.shapes);
+
+  const primaryComponent = buildActionComponent(primaryAction, 'primary', primaryShape);
+  if (primaryComponent) model.verified.components.actions.push(primaryComponent);
+  const secondaryComponent = buildActionComponent(secondaryAction, 'secondary', secondaryShape);
+  if (secondaryComponent) model.verified.components.actions.push(secondaryComponent);
+  model.verified.components.cards = buildCardComponents(cards, rejected);
 
   model.verified.motion = buildMotion(sourceDesign, evidence);
 
@@ -474,7 +623,15 @@ export function buildVerifiedVisualModel(design, evidence = {}, options = {}) {
     const raw = typeof item === 'string' ? item : item?.hex ?? item?.value;
     const normalized = normalizeColor(raw);
     if (!normalized) {
-      addRejected(rejected, `colors.all[${index}]`, String(raw), 'empty, transparent, or invalid color');
+      const alpha = colorAlpha(raw);
+      addRejected(
+        rejected,
+        `colors.all[${index}]`,
+        String(raw),
+        alpha !== null && alpha > 0 && alpha < 1
+          ? `semi-transparent color with alpha ${Number(alpha.toFixed(3))} cannot be promoted to an opaque verified semantic`
+          : 'empty, transparent, or invalid color',
+      );
     } else if (DEFAULT_LINK_COLORS.has(normalized)) {
       addRejected(rejected, `colors.all[${index}]`, normalized, 'browser default link color is not semantic evidence');
     } else if (!Object.values(model.verified.colors).some(entry => entry.value === normalized)

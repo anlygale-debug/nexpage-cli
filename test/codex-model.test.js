@@ -54,7 +54,7 @@ test('model records limited coverage without inventing full-page rhythm', () => 
   assert.deepEqual(model.rhythm.surfaceSequence, []);
 });
 
-test('model promotes a repeated action shape across different background colors', () => {
+test('model keeps an unassigned repeated action shape as a candidate instead of naming it primary', () => {
   const actions = greptileEvidence.actions.map((action, index) => ({
     ...action,
     scope: index === 0 ? 'nav' : 'footer',
@@ -65,8 +65,43 @@ test('model promotes a repeated action shape across different background colors'
   }));
   const model = buildVerifiedVisualModel(design, { ...greptileEvidence, actions }, { fullPageCaptured: true });
 
+  assert.equal(model.verified.shapes.actionPrimary, undefined);
+  assert.ok(model.candidates.shapes.some(entry => /^polygon\(/.test(entry.value.clipPath)));
+});
+
+test('model derives primary and secondary action shapes from their own color roles', () => {
+  const makeAction = ({ backgroundColor, clipPath = 'none', borderRadius = '0px', index, scope }) => ({
+    ...greptileEvidence.actions[0],
+    selector: `.role-action-${index}`,
+    scope,
+    rect: { x: 40, y: 80 + (index * 52), width: 140, height: 44 },
+    style: {
+      ...greptileEvidence.actions[0].style,
+      backgroundColor,
+      clipPath,
+      borderRadius,
+    },
+  });
+  const primaryClip = 'polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px)';
+  const actions = [
+    makeAction({ backgroundColor: 'rgb(40, 233, 159)', clipPath: primaryClip, index: 0, scope: 'nav' }),
+    makeAction({ backgroundColor: 'rgb(40, 233, 159)', clipPath: primaryClip, index: 1, scope: 'main' }),
+    ...Array.from({ length: 6 }, (_, index) => makeAction({
+      backgroundColor: 'rgb(61, 59, 79)',
+      borderRadius: '24px',
+      index: index + 2,
+      scope: index === 0 ? 'nav' : 'main',
+    })),
+  ];
+
+  const model = buildVerifiedVisualModel(design, { ...greptileEvidence, actions }, { fullPageCaptured: true });
+
+  assert.equal(model.verified.colors.actionPrimary.value, '#28e99f');
   assert.match(model.verified.shapes.actionPrimary.value.clipPath, /^polygon\(/);
-  assert.equal(model.verified.shapes.actionPrimary.evidence.instances, 2);
+  assert.equal(model.verified.shapes.actionPrimary.value.borderRadius, undefined);
+  assert.equal(model.verified.colors.actionSecondary.value, '#3d3b4f');
+  assert.equal(model.verified.shapes.actionSecondary.value.borderRadius, 24);
+  assert.equal(model.verified.shapes.actionSecondary.value.clipPath, undefined);
 });
 
 test('model does not promote a semi-transparent action background as a filled role', () => {
@@ -83,6 +118,73 @@ test('model does not promote a semi-transparent action background as a filled ro
   }, { fullPageCaptured: true });
 
   assert.equal(model.verified.colors.actionPrimary, undefined);
+});
+
+test('model rejects semi-transparent semantic ink instead of flattening it to opaque hex', () => {
+  const color = 'rgba(61, 59, 79, 0.55)';
+  const evidence = {
+    ...greptileEvidence,
+    headings: greptileEvidence.headings.map(item => ({ ...item, style: { ...item.style, color } })),
+    bodyText: greptileEvidence.bodyText.map(item => ({ ...item, style: { ...item.style, color } })),
+  };
+
+  const model = buildVerifiedVisualModel(design, evidence, { fullPageCaptured: true });
+
+  assert.equal(model.verified.colors.ink, undefined);
+  assert.ok(model.rejected.some(item => item.path.includes('style.color') && /alpha|半透明/i.test(item.reason)));
+});
+
+test('model rejects semi-transparent light and dark surfaces as verified surface materials', () => {
+  const surfaces = greptileEvidence.surfaces.map((surface, index) => ({
+    ...surface,
+    style: {
+      ...surface.style,
+      backgroundColor: index === 1 ? 'rgba(61, 59, 79, 0.6)' : 'rgba(245, 244, 237, 0.6)',
+    },
+  }));
+
+  const model = buildVerifiedVisualModel(design, { ...greptileEvidence, surfaces }, { fullPageCaptured: true });
+
+  assert.equal(model.verified.colors.surface, undefined);
+  assert.deepEqual(model.verified.materials, []);
+  assert.ok(model.rejected.some(item => item.path.includes('surfaces') && /alpha|半透明/i.test(item.reason)));
+});
+
+test('model rejects a semi-transparent raw palette entry without creating an opaque candidate', () => {
+  const translucentDesign = {
+    ...design,
+    colors: { all: [{ value: 'rgba(40, 233, 159, 0.4)' }] },
+  };
+
+  const model = buildVerifiedVisualModel(translucentDesign, {
+    ...greptileEvidence,
+    actions: [], headings: [], bodyText: [], labels: [], surfaces: [], cards: [],
+  }, { fullPageCaptured: true });
+
+  assert.equal(model.candidates.colors.some(entry => entry.value === '#28e99f'), false);
+  assert.ok(model.rejected.some(item => item.path === 'colors.all[0]' && /alpha|半透明/i.test(item.reason)));
+});
+
+test('model builds abstract repeated action, card, and surface material rules', () => {
+  const model = buildVerifiedVisualModel(design, greptileEvidence, { fullPageCaptured: true });
+
+  assert.deepEqual(model.verified.materials.map(entry => entry.value.role).sort(), ['surfaceDark', 'surfaceLight']);
+  assert.ok(model.verified.components.actions.some(entry => entry.value.role === 'primary'
+    && entry.evidence.instances === 2));
+  assert.ok(model.verified.components.cards.some(entry => entry.evidence.instances === 2
+    && entry.value.background === '#f5f4ed'
+    && entry.value.border?.color === '#3d3b4f'));
+  assert.doesNotMatch(JSON.stringify(model.verified.components), /Get started|Book a demo|Build software with confidence/);
+});
+
+test('model does not turn a one-off main action into a reusable component rule', () => {
+  const model = buildVerifiedVisualModel(design, {
+    ...greptileEvidence,
+    actions: [greptileEvidence.actions[1]],
+  }, { fullPageCaptured: true });
+
+  assert.equal(model.verified.colors.actionPrimary.value, '#28e99f');
+  assert.deepEqual(model.verified.components.actions, []);
 });
 
 test('model favors a prominent chromatic action over numerous muted secondary actions', () => {

@@ -31,4 +31,12 @@ test('Greptile regression preserves the verified visual signature', () => {
   assert.match(files['motion.json'], /6000/);
   assert.match(files['motion.json'], /40000/);
   assert.doesNotMatch(files['CODEX.md'], /复制.*(Hero|Testimonials|FAQ)/i);
+  assert.equal(new Set(model.verified.motion.map(entry => entry.value.target)).size, 2);
+  assert.ok(model.verified.motion.every(entry => !['.absolute', 'div'].includes(entry.value.target)));
+  assert.deepEqual(model.verified.materials.map(entry => entry.value.role).sort(), ['surfaceDark', 'surfaceLight']);
+  assert.ok(model.verified.components.actions.some(entry => entry.value.role === 'primary'));
+  assert.ok(model.verified.components.cards.some(entry => entry.evidence.instances >= 2));
+  assert.match(files['CODEX.md'], /材质与表面/);
+  assert.match(files['CODEX.md'], /组件规则/);
+  assert.doesNotMatch(files['CODEX.md'], /Get started|Book a demo|Build software with confidence/);
 });

@@ -54,16 +54,28 @@ export const greptileEvidence = {
       },
     },
   ],
-  cards: [{
-    selector: '.feature-card', visible: true,
-    rect: { x: 96, y: 980, width: 340, height: 260 },
-    style: {
-      color: 'rgb(61, 59, 79)', backgroundColor: 'rgb(245, 244, 237)',
-      fontFamily: 'DM Sans, sans-serif', fontSize: '16px', fontWeight: '400',
-      lineHeight: '24px', letterSpacing: 'normal', borderRadius: '0px',
-      borderWidth: '1px', borderColor: 'rgb(61, 59, 79)', clipPath: 'none',
+  cards: [
+    {
+      selector: '.feature-card:nth-of-type(1)', visible: true,
+      rect: { x: 96, y: 980, width: 340, height: 260 },
+      style: {
+        color: 'rgb(61, 59, 79)', backgroundColor: 'rgb(245, 244, 237)',
+        fontFamily: 'DM Sans, sans-serif', fontSize: '16px', fontWeight: '400',
+        lineHeight: '24px', letterSpacing: 'normal', borderRadius: '0px',
+        borderWidth: '1px', borderColor: 'rgb(61, 59, 79)', clipPath: 'none',
+      },
     },
-  }],
+    {
+      selector: '.feature-card:nth-of-type(2)', visible: true,
+      rect: { x: 460, y: 980, width: 340, height: 260 },
+      style: {
+        color: 'rgb(61, 59, 79)', backgroundColor: 'rgb(245, 244, 237)',
+        fontFamily: 'DM Sans, sans-serif', fontSize: '16px', fontWeight: '400',
+        lineHeight: '24px', letterSpacing: 'normal', borderRadius: '0px',
+        borderWidth: '1px', borderColor: 'rgb(61, 59, 79)', clipPath: 'none',
+      },
+    },
+  ],
   surfaces: [
     { selector: 'body', order: 0, rect: { width: 1280, height: 2400 }, style: { backgroundColor: 'rgb(245, 244, 237)', color: 'rgb(61, 59, 79)' } },
     { selector: 'main section:nth-of-type(2)', order: 1, rect: { width: 1280, height: 720 }, style: { backgroundColor: 'rgb(61, 59, 79)', color: 'rgb(245, 244, 237)' } },

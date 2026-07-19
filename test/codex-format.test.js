@@ -43,6 +43,18 @@ test('CODEX context establishes style and waits for product requirements', () =>
   assert.doesNotMatch(markdown, /Hero.*Testimonials.*FAQ/i);
 });
 
+test('CODEX context includes verified abstract materials and component rules', () => {
+  const markdown = formatVerifiedCodexContext(model);
+
+  assert.match(markdown, /材质与表面/);
+  assert.match(markdown, /浅色表面/);
+  assert.match(markdown, /深色表面/);
+  assert.match(markdown, /组件规则/);
+  assert.match(markdown, /主操作/);
+  assert.match(markdown, /卡片/);
+  assert.doesNotMatch(markdown, /Get started|Book a demo|Build software with confidence/);
+});
+
 test('motion output preserves real target and duration', () => {
   const motion = JSON.parse(formatVerifiedMotion(model));
   assert.deepEqual(motion.animations.map(item => item.duration), [6000, 40000]);

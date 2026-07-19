@@ -92,6 +92,11 @@ function evaluateWithSurfaceCandidates(callback, recordSurfaceSelector) {
     rect: { x: 0, y: index * 80, width: 1280, height: 720 },
     style: { backgroundColor: 'rgba(0, 0, 0, 0)' },
   }));
+  const translucent = new FakeElement({
+    tagName: 'SECTION',
+    rect: { x: 0, y: 1350, width: 1280, height: 720 },
+    style: { backgroundColor: 'rgba(61, 59, 79, 0.45)', color: 'rgb(245, 244, 237)' },
+  });
   const dark = new FakeElement({
     classList: ['relative', 'overflow-hidden', 'bg-slate'],
     rect: { x: 0, y: 1398, width: 1280, height: 1864 },
@@ -131,7 +136,7 @@ function evaluateWithSurfaceCandidates(callback, recordSurfaceSelector) {
 
         recordSurfaceSelector(selector);
         const matches = [];
-        if (clauses.includes('section')) matches.push(...transparent);
+        if (clauses.includes('section')) matches.push(...transparent, translucent);
         if (clauses.includes('[class*="bg-"]')) {
           matches.push(...classSurfaces.filter(element => element.classList.some(name => name.includes('bg-'))));
         }
@@ -149,6 +154,87 @@ function evaluateWithSurfaceCandidates(callback, recordSurfaceSelector) {
     },
     getComputedStyle(element) {
       return { ...defaults, ...element.style };
+    },
+    window: { innerWidth: 1280, innerHeight: 800 },
+  });
+
+  try {
+    return callback();
+  } finally {
+    for (const [key, value] of originals) {
+      if (value === undefined) delete globalThis[key];
+      else globalThis[key] = value;
+    }
+  }
+}
+
+function evaluateWithGenericAnimationTargets(callback) {
+  class FakeElement {
+    constructor({ tagName = 'DIV', classList = [], parentElement = null } = {}) {
+      this.tagName = tagName;
+      this.classList = classList;
+      this.parentElement = parentElement;
+      this.children = [];
+      this.id = '';
+      this.innerText = '';
+      this.textContent = '';
+      if (parentElement) parentElement.children.push(this);
+    }
+
+    closest() {
+      return null;
+    }
+
+    getAttribute() {
+      return null;
+    }
+
+    getBoundingClientRect() {
+      return { x: 0, y: 0, width: 640, height: 360 };
+    }
+  }
+
+  const main = new FakeElement({ tagName: 'MAIN' });
+  const section = new FakeElement({ tagName: 'SECTION', parentElement: main });
+  const first = new FakeElement({
+    classList: ['absolute', 'inset-0', 'pointer-events-none', 'ambient-layer'],
+    parentElement: section,
+  });
+  const second = new FakeElement({
+    classList: ['absolute', 'inset-0', 'pointer-events-none', 'ambient-layer'],
+    parentElement: section,
+  });
+  const animations = [first, second].map((target, index) => ({
+    animationName: index === 0 ? 'float-code' : 'grid-drift',
+    id: '',
+    playState: 'running',
+    effect: {
+      target,
+      getTiming: () => ({ duration: index === 0 ? 6000 : 40000, easing: 'linear', iterations: Infinity }),
+    },
+  }));
+  const defaults = {
+    display: 'block', visibility: 'visible', opacity: '1', color: 'rgb(0, 0, 0)',
+    backgroundColor: 'rgba(0, 0, 0, 0)', fontFamily: 'sans-serif', fontSize: '16px',
+    fontWeight: '400', lineHeight: 'normal', letterSpacing: 'normal', borderRadius: '0px',
+    borderWidth: '0px', borderColor: 'rgb(0, 0, 0)', clipPath: 'none',
+  };
+  const keys = ['CSS', 'Element', 'document', 'getComputedStyle', 'window'];
+  const originals = new Map(keys.map(key => [key, globalThis[key]]));
+
+  Object.assign(globalThis, {
+    CSS: { escape: value => value },
+    Element: FakeElement,
+    document: {
+      querySelectorAll(selector) {
+        return selector === '.ambient-layer' ? [first, second] : [];
+      },
+      getAnimations() {
+        return animations;
+      },
+    },
+    getComputedStyle() {
+      return defaults;
     },
     window: { innerWidth: 1280, innerHeight: 800 },
   });
@@ -197,7 +283,7 @@ test('collectCodexEvidence excludes descendants of transparent ancestors', async
   assert.equal(evidence.bodyText.length, 0);
 });
 
-test('collectCodexEvidence retains ordered opaque class-based surfaces after transparent candidates', async () => {
+test('collectCodexEvidence retains ordered opaque class-based surfaces and excludes translucent candidates', async () => {
   let calls = 0;
   let queriedSurfaceSelector = '';
   const page = {
@@ -220,4 +306,20 @@ test('collectCodexEvidence retains ordered opaque class-based surfaces after tra
     'rgb(245, 244, 237)',
   ]);
   assert.equal(evidence.surfaces.some(item => item.style.backgroundColor === 'rgba(0, 0, 0, 0)'), false);
+  assert.equal(evidence.surfaces.some(item => item.style.backgroundColor === 'rgba(61, 59, 79, 0.45)'), false);
+});
+
+test('collectCodexEvidence distinguishes animation targets that only have generic utility classes', async () => {
+  const page = {
+    async evaluate(callback) {
+      return evaluateWithGenericAnimationTargets(callback);
+    },
+  };
+
+  const evidence = await collectCodexEvidence(page);
+  const targets = evidence.animations.map(item => item.target);
+
+  assert.equal(new Set(targets).size, 2);
+  assert.ok(targets.every(target => target.includes(':nth-of-type(')));
+  assert.ok(targets.every(target => !['.absolute', 'div'].includes(target)));
 });

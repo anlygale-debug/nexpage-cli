@@ -209,7 +209,15 @@ export function formatVerifiedCodexContext(model) {
   const typography = Object.entries(model?.verified?.typography || {});
   const spacing = model?.verified?.spacing || [];
   const shapes = Object.entries(model?.verified?.shapes || {});
-  if (!colors.length && !typography.length && !spacing.length && !shapes.length) {
+  const materials = Array.isArray(model?.verified?.materials) ? model.verified.materials : [];
+  const actionComponents = Array.isArray(model?.verified?.components?.actions)
+    ? model.verified.components.actions
+    : [];
+  const cardComponents = Array.isArray(model?.verified?.components?.cards)
+    ? model.verified.components.cards
+    : [];
+  if (!colors.length && !typography.length && !spacing.length && !shapes.length
+    && !materials.length && !actionComponents.length && !cardComponents.length) {
     lines.push('- 暂无可安全提升为规则的视觉值。');
   }
   for (const [name, entry] of colors) {
@@ -233,6 +241,56 @@ export function formatVerifiedCodexContext(model) {
     if (details.length) lines.push(`- 形状 ${name}：${details.join('；')}`);
   }
   lines.push('');
+
+  lines.push('### 材质与表面', '');
+  if (!materials.length) lines.push('- 暂无经过重复证据支持的表面材质规则。');
+  for (const entry of materials) {
+    const value = verifiedValue(entry);
+    const role = cleanString(value?.role);
+    const roleLabel = role === 'surfaceLight' ? '浅色表面' : role === 'surfaceDark' ? '深色表面' : '';
+    const background = cleanString(value?.background);
+    const foreground = cleanString(value?.foreground);
+    if (!roleLabel || !background) continue;
+    lines.push(`- ${roleLabel}：背景 \`${background}\`${foreground ? `；前景 \`${foreground}\`` : ''}`);
+  }
+  lines.push('');
+
+  lines.push('### 组件规则', '');
+  if (!actionComponents.length && !cardComponents.length) {
+    lines.push('- 暂无经过重复证据支持的组件规则。');
+  }
+  for (const entry of actionComponents) {
+    const value = verifiedValue(entry);
+    const role = cleanString(value?.role);
+    const roleLabel = role === 'primary' ? '主操作 / 按钮' : role === 'secondary' ? '次操作 / 按钮' : '';
+    const background = cleanString(value?.background);
+    const foreground = cleanString(value?.foreground);
+    if (!roleLabel || !background) continue;
+    const details = [`背景 \`${background}\``];
+    if (foreground) details.push(`前景 \`${foreground}\``);
+    const clipPath = cleanString(value?.shape?.clipPath);
+    const radius = pixel(value?.shape?.borderRadius);
+    if (clipPath) details.push(`裁切形状 ${clipPath}`);
+    if (radius) details.push(`圆角 ${radius}`);
+    lines.push(`- ${roleLabel}：${details.join('；')}`);
+  }
+  for (const entry of cardComponents) {
+    const value = verifiedValue(entry);
+    const background = cleanString(value?.background);
+    if (!background) continue;
+    const details = [`背景 \`${background}\``];
+    const foreground = cleanString(value?.foreground);
+    const borderColor = cleanString(value?.border?.color);
+    const borderWidth = pixel(value?.border?.width);
+    const clipPath = cleanString(value?.shape?.clipPath);
+    const radius = pixel(value?.shape?.borderRadius);
+    if (foreground) details.push(`前景 \`${foreground}\``);
+    if (borderWidth && borderColor) details.push(`边框 ${borderWidth} \`${borderColor}\``);
+    if (clipPath) details.push(`裁切形状 ${clipPath}`);
+    if (radius) details.push(`圆角 ${radius}`);
+    lines.push(`- 卡片：${details.join('；')}`);
+  }
+  lines.push('- 这些规则只描述可复用视觉结构，不携带来源品牌、文案或信息架构。', '');
 
   lines.push('## 低可信候选', '');
   const candidates = Object.entries(model?.candidates || {}).flatMap(([kind, entries]) =>
