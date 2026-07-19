@@ -160,6 +160,7 @@ export {
   validateCodexPackage,
   assertValidCodexPackage,
 } from './codex/validate-package.js';
+export { writeCodexContextPack } from './codex/write-package.js';
 
 // Formatters
 export { formatTokens } from './formatters/tokens.js';
@@ -179,7 +180,6 @@ export {
   buildCodexContextFiles,
   isCodexProfile,
   isWithCodex,
-  writeCodexContextPack,
 } from './formatters/codex-context.js';
 export { chooseOutputFolder, resolveOutputDirectory } from './output-path.js';
 export { buildPromptPack, formatV0Prompt, formatLovablePrompt, formatCursorPrompt, formatClaudeArtifactPrompt } from './formatters/prompt-pack.js';
