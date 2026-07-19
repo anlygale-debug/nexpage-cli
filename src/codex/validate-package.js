@@ -54,8 +54,7 @@ function parseJsonFile(files, fileName, errors) {
 function isBalancedCssScalar(value) {
   let quote = null;
   let escaped = false;
-  let parentheses = 0;
-  let brackets = 0;
+  const delimiters = [];
 
   for (const character of value) {
     if (quote) {
@@ -71,20 +70,15 @@ function isBalancedCssScalar(value) {
 
     if (character === '"' || character === "'") {
       quote = character;
-    } else if (character === '(') {
-      parentheses += 1;
-    } else if (character === ')') {
-      if (parentheses === 0) return false;
-      parentheses -= 1;
-    } else if (character === '[') {
-      brackets += 1;
-    } else if (character === ']') {
-      if (brackets === 0) return false;
-      brackets -= 1;
+    } else if (character === '(' || character === '[') {
+      delimiters.push(character);
+    } else if (character === ')' || character === ']') {
+      const expected = character === ')' ? '(' : '[';
+      if (delimiters.pop() !== expected) return false;
     }
   }
 
-  return quote === null && parentheses === 0 && brackets === 0;
+  return quote === null && delimiters.length === 0;
 }
 
 function validateCss(source, errors) {
@@ -163,6 +157,10 @@ function stripFencedCodeBlocks(markdown) {
   }).join('\n');
 }
 
+function stripHtmlComments(markdown) {
+  return markdown.replace(/<!--[\s\S]*?(?:-->|$)/g, '');
+}
+
 function getMarkdownSectionBody(markdown, titlePattern) {
   const headings = [...markdown.matchAll(/^(#{1,6})\s+(.+?)\s*$/gm)];
   const sectionIndex = headings.findIndex(match => match[1].length === 2 && titlePattern.test(match[2]));
@@ -175,7 +173,7 @@ function getMarkdownSectionBody(markdown, titlePattern) {
 }
 
 function validateCodexMarkdown(markdown, fullPageExists, errors) {
-  const prose = stripFencedCodeBlocks(markdown);
+  const prose = stripFencedCodeBlocks(stripHtmlComments(markdown));
   const requiredSections = [
     ['用途与边界', /^用途与边界$/],
     ['行为规则', /^(?:Codex\s*)?行为规则$/i],
@@ -198,9 +196,10 @@ function validateCodexMarkdown(markdown, fullPageExists, errors) {
     .split('\n')
     .filter(line => line.trim() && !/^(?: {4}|\t)/.test(line) && !line.includes('`'))
     .map(line => line.trim());
-  const invalidation = /废止|作废|取消|解除|无效|不再适用/;
+  const invalidation = /废止|作废|取消|解除|无效|不再适用|失效|废除/;
+  const directiveMeaning = /规则|限制|要求|指令|等待|需求|复制|复刻/;
   const permissionToCopy = /(?:(?:可以|允许|准许)[^。\n]{0,12}(?:复制|复刻)|(?:复制|复刻)[^。\n]{0,12}(?:可以|允许|准许))/;
-  const invalidationConflict = directiveLines.some(line => invalidation.test(line));
+  const invalidationConflict = directiveLines.some(line => invalidation.test(line) && directiveMeaning.test(line));
   const copyConflict = directiveLines.some(line =>
     (/(?:复制|复刻)/.test(line) && invalidation.test(line)) || permissionToCopy.test(line));
   const waitConflict = directiveLines.some(line =>
