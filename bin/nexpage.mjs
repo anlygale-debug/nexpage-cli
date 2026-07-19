@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-import { writeFileSync, mkdirSync, readdirSync } from 'fs';
+import { writeFileSync, mkdirSync, mkdtempSync, readdirSync, rmSync } from 'fs';
+import { tmpdir } from 'os';
 import { join } from 'path';
 import { createInterface } from 'readline';
 import { chromium } from 'playwright';
@@ -7,7 +8,7 @@ import { extractDesignLanguage, formatDtcgTokens, formatMarkdown, formatTailwind
   formatCssVars, formatPreview, formatFigma, formatReactTheme, formatShadcnTheme,
   formatMotionTokens, formatWordPress, formatVueTheme, formatSvelteTheme,
   formatAnatomyStubs, formatV0Prompt, formatLovablePrompt, formatCursorPrompt,
-  formatClaudeArtifactPrompt, isCodexProfile, isWithCodex, writeCodexContextPack,
+  formatClaudeArtifactPrompt, collectCodexEvidence, planCodexRun, writeCodexContextPack,
   resolveOutputDirectory } from '../src/index.js';
 
 // ── Parse args ──
@@ -43,8 +44,7 @@ if (!rawUrl.startsWith('http')) rawUrl = `https://${rawUrl}`;
 try { new URL(rawUrl); } catch { console.error(' 错误：无效的网址'); process.exit(1); }
 
 const skip = args.includes('-y') || args.includes('--yes');
-const codexProfile = isCodexProfile(args);
-const withCodex = isWithCodex(args);
+const runPlan = planCodexRun(args);
 let output;
 try {
   output = resolveOutputDirectory({ args, url: rawUrl });
@@ -84,12 +84,17 @@ if (!skip) {
   console.log('');
 }
 
+const captureDirectory = runPlan.wantsCodex
+  ? mkdtempSync(join(tmpdir(), 'nexpage-codex-capture-'))
+  : null;
+let browserClosed = false;
+
+try {
 // ── Step 3: Screenshot ──
 console.log('  ◐ 正在截图...');
-const screenshotPath = codexProfile
-  ? join(outDir, 'codex-context', 'reference.png')
+const screenshotPath = runPlan.codexOnly
+  ? join(captureDirectory, 'reference.png')
   : join(outDir, 'page-screenshot.png');
-if (codexProfile) mkdirSync(join(outDir, 'codex-context'), { recursive: true });
 let screenshot = { ok: false };
 try {
   await page.screenshot({ path: screenshotPath, fullPage: false, type: 'png' });
@@ -117,8 +122,23 @@ const sys = new Set(['Times','Arial','Helvetica','sans-serif','serif','monospace
 if (families.length <= 1 && !families.some(f => !sys.has(f.name)))
   warnings.push('无自定义字体');
 
-// ── Step 6: Close browser ──
+// ── Step 6: Collect Codex evidence, then close browser ──
+let evidence = {};
+let fullPagePath = null;
+let fullPageError = null;
+if (runPlan.wantsCodex) {
+  evidence = await collectCodexEvidence(page);
+  const fullPageCapturePath = join(captureDirectory, 'reference-full.png');
+  try {
+    await page.screenshot({ path: fullPageCapturePath, fullPage: true, type: 'png' });
+    fullPagePath = fullPageCapturePath;
+  } catch (error) {
+    fullPageError = error.message;
+  }
+}
+
 await browser.close();
+browserClosed = true;
 console.log(`  ✓ 提取完成 (${((Date.now()-start)/1000).toFixed(1)}s)`);
 console.log('');
 
@@ -128,7 +148,7 @@ const p = hostname;
 function w(name, content) {
   try { writeFileSync(join(outDir, name), typeof content === 'string' ? content : JSON.stringify(content, null, 2)); } catch {}
 }
-if (!codexProfile) {
+if (runPlan.generateFullOutput) {
 const dl = await import('../src/index.js');
 w(`${p}-design-tokens.json`, dl.formatDtcgTokens(design));
 w(`${p}-variables.css`, dl.formatCssVars(design));
@@ -172,21 +192,36 @@ writeFileSync(join(outDir, 'result.json'), JSON.stringify(design, null, 2));
 }
 
 let codexPack = null;
-if (codexProfile || withCodex) {
-  codexPack = writeCodexContextPack({
-    design,
-    outDir,
-    screenshotPath: screenshot.ok ? screenshotPath : null,
-    hostname,
-  });
-  console.log(`  ✓ Codex 上下文包已生成 (${codexPack.files.length} 个文件)`);
+if (runPlan.wantsCodex) {
+  const referencePath = screenshot.ok ? screenshotPath : null;
+  try {
+    codexPack = writeCodexContextPack({
+      design,
+      evidence,
+      outDir,
+      referencePath,
+      fullPagePath,
+      fullPageError,
+      hostname,
+    });
+    console.log(`  ✓ Codex 上下文包已生成 (${codexPack.files.length} 个文件)`);
+    codexPack.warnings.forEach(warning => console.log(`  ! ${warning}`));
+  } catch (error) {
+    const label = runPlan.codexOnly
+      ? '  ✗ Codex 上下文包生成失败'
+      : '  ! Codex 上下文包生成失败；完整输出已保留';
+    console.error(label);
+    const errors = Array.isArray(error.errors) ? error.errors : [error.message];
+    errors.filter(Boolean).forEach(message => console.error(`    - ${message}`));
+    process.exitCode = 1;
+  }
 }
 
 // ── Summary ──
 const s = design.score || {};
 const c = design.colors || {};
 const t = design.typography || {};
-const files = codexProfile && codexPack ? codexPack.files.length : readdirSync(outDir).length;
+const files = runPlan.codexOnly ? (codexPack?.files.length ?? 0) : readdirSync(outDir).length;
 
 const gradeIcon = s.grade === 'A' ? '●' : s.grade === 'B' ? '◉' : '○';
 console.log('  ══════════════════════════════════════');
@@ -205,6 +240,12 @@ if (warnings.length) {
   warnings.forEach(w => console.log(`    - ${w}`));
 }
 console.log('  ──────────────────────────────────────');
-console.log(`  ✓ 已保存到 ${outDir}/`);
+if (runPlan.generateFullOutput || codexPack) console.log(`  ✓ 已保存到 ${outDir}/`);
 if (codexPack) console.log(`  ✓ Codex 使用目录 ${codexPack.directory}/`);
 console.log('');
+} finally {
+  if (!browserClosed) await browser.close().catch(() => {});
+  if (captureDirectory) {
+    rmSync(captureDirectory, { recursive: true, force: true });
+  }
+}

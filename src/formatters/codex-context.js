@@ -32,3 +32,14 @@ export function isCodexProfile(args) {
 export function isWithCodex(args) {
   return Array.isArray(args) && args.includes('--with-codex');
 }
+
+export function planCodexRun(args) {
+  const codexOnly = isCodexProfile(args);
+  const withCodex = !codexOnly && isWithCodex(args);
+  return {
+    codexOnly,
+    withCodex,
+    wantsCodex: codexOnly || withCodex,
+    generateFullOutput: !codexOnly,
+  };
+}
