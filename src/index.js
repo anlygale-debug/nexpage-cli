@@ -155,6 +155,11 @@ export {
   formatVerifiedCss,
   formatVerifiedMotion,
 } from './codex/format-context.js';
+export {
+  CodexPackageValidationError,
+  validateCodexPackage,
+  assertValidCodexPackage,
+} from './codex/validate-package.js';
 
 // Formatters
 export { formatTokens } from './formatters/tokens.js';
