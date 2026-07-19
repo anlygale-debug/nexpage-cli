@@ -56,3 +56,24 @@ test('machine formatters omit object-like strings from scalar fields', () => {
   assert.doesNotMatch(formatVerifiedTokens(unsafeModel), /\[object Object\]/);
   assert.doesNotMatch(formatVerifiedCss(unsafeModel), /\[object Object\]/);
 });
+
+test('machine formatters reject exact sentinel strings but preserve legitimate substrings', () => {
+  const unsafeModel = structuredClone(model);
+  unsafeModel.verified.typography.display.value.family = 'Undefined Sans';
+  unsafeModel.verified.typography.body.value.family = ' undefined ';
+  unsafeModel.verified.typography.mono.value.weight = 'NuLl';
+  unsafeModel.verified.shapes.actionPrimary.value.clipPath = 'UNDEFINED';
+
+  const tokensText = formatVerifiedTokens(unsafeModel);
+  const css = formatVerifiedCss(unsafeModel);
+  const tokens = JSON.parse(tokensText);
+
+  assert.doesNotMatch(tokensText, /:\s*"(?:null|undefined|\[object object\])"\s*[,}]/i);
+  assert.doesNotMatch(css, /:\s*(?:null|undefined|\[object object\])\s*;/i);
+  assert.match(css, /^:root \{\n(?:  --[a-z0-9-]+: [^\n;]+;\n)*\}\n$/);
+  assert.equal(tokens.typography.display.$value.fontFamily, 'Undefined Sans');
+  assert.equal(tokens.typography.body, undefined);
+  assert.equal(tokens.typography.mono.$value.fontWeight, undefined);
+  assert.equal(tokens.$extensions, undefined);
+  assert.match(css, /--typography-display-font-family: Undefined Sans;/);
+});

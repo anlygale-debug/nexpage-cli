@@ -1,7 +1,8 @@
 function cleanString(value) {
   if (typeof value !== 'string') return '';
   const cleaned = value.replace(/\s+/g, ' ').trim();
-  return cleaned === '[object Object]' ? '' : cleaned;
+  const normalized = cleaned.toLowerCase();
+  return ['null', 'undefined', '[object object]'].includes(normalized) ? '' : cleaned;
 }
 
 function finiteNumber(value) {
