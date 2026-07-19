@@ -65,7 +65,7 @@ function evaluateWithTransparentAncestor(callback) {
   }
 }
 
-function evaluateWithSurfaceCandidates(callback) {
+function evaluateWithSurfaceCandidates(callback, recordSurfaceSelector) {
   class FakeElement {
     constructor({ classList = [], tagName = 'DIV', rect, style = {} }) {
       this.parentElement = null;
@@ -113,7 +113,7 @@ function evaluateWithSurfaceCandidates(callback) {
     fontWeight: '400', lineHeight: 'normal', letterSpacing: 'normal', borderRadius: '0px',
     borderWidth: '0px', borderColor: 'rgb(0, 0, 0)', clipPath: 'none',
   };
-  const candidates = [...transparent, light, dark, black, dark];
+  const classSurfaces = [dark, black, light];
   const keys = ['CSS', 'Element', 'document', 'getComputedStyle', 'window'];
   const originals = new Map(keys.map(key => [key, globalThis[key]]));
 
@@ -122,7 +122,26 @@ function evaluateWithSurfaceCandidates(callback) {
     Element: FakeElement,
     document: {
       querySelectorAll(selector) {
-        return selector.startsWith('body, main, section') ? candidates : [];
+        const clauses = selector.split(',').map(item => item.trim());
+        const isSurfaceQuery = clauses.some(clause => [
+          'body', 'main', 'section', 'article', 'footer', '[role="main"]',
+          '[class*="bg-"]', '[class*="surface"]', '[class*="background"]',
+        ].includes(clause));
+        if (!isSurfaceQuery) return [];
+
+        recordSurfaceSelector(selector);
+        const matches = [];
+        if (clauses.includes('section')) matches.push(...transparent);
+        if (clauses.includes('[class*="bg-"]')) {
+          matches.push(...classSurfaces.filter(element => element.classList.some(name => name.includes('bg-'))));
+        }
+        if (clauses.includes('[class*="surface"]')) {
+          matches.push(...classSurfaces.filter(element => element.classList.some(name => name.includes('surface'))));
+        }
+        if (clauses.includes('[class*="background"]')) {
+          matches.push(...classSurfaces.filter(element => element.classList.some(name => name.includes('background'))));
+        }
+        return [...new Set(matches)];
       },
       getAnimations() {
         return [];
@@ -180,15 +199,21 @@ test('collectCodexEvidence excludes descendants of transparent ancestors', async
 
 test('collectCodexEvidence retains ordered opaque class-based surfaces after transparent candidates', async () => {
   let calls = 0;
+  let queriedSurfaceSelector = '';
   const page = {
     async evaluate(callback) {
       calls += 1;
-      return evaluateWithSurfaceCandidates(callback);
+      return evaluateWithSurfaceCandidates(callback, selector => {
+        queriedSurfaceSelector = selector;
+      });
     },
   };
 
   const evidence = await collectCodexEvidence(page);
   assert.equal(calls, 1);
+  for (const clause of ['[class*="bg-"]', '[class*="surface"]', '[class*="background"]']) {
+    assert.equal(queriedSurfaceSelector.includes(clause), true, `surface selector must include ${clause}`);
+  }
   assert.deepEqual(evidence.surfaces.map(item => item.style.backgroundColor), [
     'rgb(61, 59, 79)',
     'rgb(0, 0, 0)',
