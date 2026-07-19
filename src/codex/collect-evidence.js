@@ -15,14 +15,20 @@ export async function collectCodexEvidence(page) {
     };
 
     const isVisible = element => {
-      const style = getComputedStyle(element);
       const rect = element.getBoundingClientRect();
-      return style.display !== 'none'
-        && style.visibility !== 'hidden'
-        && style.visibility !== 'collapse'
-        && Number.parseFloat(style.opacity || '1') > 0
-        && rect.width > 0
-        && rect.height > 0;
+      if (rect.width <= 0 || rect.height <= 0) return false;
+
+      for (let current = element; current; current = current.parentElement) {
+        const style = getComputedStyle(current);
+        if (style.display === 'none'
+          || style.visibility === 'hidden'
+          || style.visibility === 'collapse'
+          || Number.parseFloat(style.opacity || '1') <= 0) {
+          return false;
+        }
+      }
+
+      return true;
     };
 
     const selectorFor = element => {
