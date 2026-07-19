@@ -43,3 +43,27 @@ export function planCodexRun(args) {
     generateFullOutput: !codexOnly,
   };
 }
+
+export async function runCodexOutputSequence({
+  runPlan,
+  codexPreparationError = null,
+  generateFullOutput,
+  generateCodexPackage,
+}) {
+  let fullOutput = null;
+  let codexPack = null;
+  let codexError = codexPreparationError;
+
+  if (runPlan.generateFullOutput) {
+    fullOutput = await generateFullOutput();
+  }
+  if (runPlan.wantsCodex && !codexError) {
+    try {
+      codexPack = await generateCodexPackage();
+    } catch (error) {
+      codexError = error;
+    }
+  }
+
+  return { fullOutput, codexPack, codexError };
+}

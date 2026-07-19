@@ -8,7 +8,8 @@ import { extractDesignLanguage, formatDtcgTokens, formatMarkdown, formatTailwind
   formatCssVars, formatPreview, formatFigma, formatReactTheme, formatShadcnTheme,
   formatMotionTokens, formatWordPress, formatVueTheme, formatSvelteTheme,
   formatAnatomyStubs, formatV0Prompt, formatLovablePrompt, formatCursorPrompt,
-  formatClaudeArtifactPrompt, collectCodexEvidence, planCodexRun, writeCodexContextPack,
+  formatClaudeArtifactPrompt, collectCodexEvidence, planCodexRun, runCodexOutputSequence,
+  writeCodexContextPack,
   resolveOutputDirectory } from '../src/index.js';
 
 // ── Parse args ──
@@ -65,6 +66,10 @@ console.log('');
 // ── Step 1: Open visible browser ──
 console.log('  ◐ 正在打开浏览器...');
 const browser = await chromium.launch({ headless: false });
+let captureDirectory = null;
+let browserClosed = false;
+
+try {
 const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
 const page = await context.newPage();
 await page.goto(rawUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
@@ -84,12 +89,9 @@ if (!skip) {
   console.log('');
 }
 
-const captureDirectory = runPlan.wantsCodex
+captureDirectory = runPlan.wantsCodex
   ? mkdtempSync(join(tmpdir(), 'nexpage-codex-capture-'))
   : null;
-let browserClosed = false;
-
-try {
 // ── Step 3: Screenshot ──
 console.log('  ◐ 正在截图...');
 const screenshotPath = runPlan.codexOnly
@@ -126,14 +128,19 @@ if (families.length <= 1 && !families.some(f => !sys.has(f.name)))
 let evidence = {};
 let fullPagePath = null;
 let fullPageError = null;
+let codexPreparationError = null;
 if (runPlan.wantsCodex) {
-  evidence = await collectCodexEvidence(page);
-  const fullPageCapturePath = join(captureDirectory, 'reference-full.png');
   try {
-    await page.screenshot({ path: fullPageCapturePath, fullPage: true, type: 'png' });
-    fullPagePath = fullPageCapturePath;
+    evidence = await collectCodexEvidence(page);
+    const fullPageCapturePath = join(captureDirectory, 'reference-full.png');
+    try {
+      await page.screenshot({ path: fullPageCapturePath, fullPage: true, type: 'png' });
+      fullPagePath = fullPageCapturePath;
+    } catch (error) {
+      fullPageError = error.message;
+    }
   } catch (error) {
-    fullPageError = error.message;
+    codexPreparationError = error;
   }
 }
 
@@ -148,7 +155,7 @@ const p = hostname;
 function w(name, content) {
   try { writeFileSync(join(outDir, name), typeof content === 'string' ? content : JSON.stringify(content, null, 2)); } catch {}
 }
-if (runPlan.generateFullOutput) {
+async function generateFullOutput() {
 const dl = await import('../src/index.js');
 w(`${p}-design-tokens.json`, dl.formatDtcgTokens(design));
 w(`${p}-variables.css`, dl.formatCssVars(design));
@@ -189,13 +196,15 @@ if (design.formStates) w(`${p}-form-states.json`, design.formStates);
 if (design.darkModePaired?.available) w(`${p}-dark-mode.json`, design.darkModePaired);
 w(`${p}-mcp.json`, { colors: { all: design.colors?.all || [] }, regions: design.regions || [], componentClusters: design.componentClusters || [], accessibility: { remediation: design.accessibility?.remediation || [] }, cssHealth: design.cssHealth || null });
 writeFileSync(join(outDir, 'result.json'), JSON.stringify(design, null, 2));
+return { directory: outDir };
 }
 
-let codexPack = null;
-if (runPlan.wantsCodex) {
-  const referencePath = screenshot.ok ? screenshotPath : null;
-  try {
-    codexPack = writeCodexContextPack({
+const referencePath = screenshot.ok ? screenshotPath : null;
+const { codexPack, codexError } = await runCodexOutputSequence({
+  runPlan,
+  codexPreparationError,
+  generateFullOutput,
+  generateCodexPackage: async () => writeCodexContextPack({
       design,
       evidence,
       outDir,
@@ -203,18 +212,21 @@ if (runPlan.wantsCodex) {
       fullPagePath,
       fullPageError,
       hostname,
-    });
-    console.log(`  ✓ Codex 上下文包已生成 (${codexPack.files.length} 个文件)`);
-    codexPack.warnings.forEach(warning => console.log(`  ! ${warning}`));
-  } catch (error) {
-    const label = runPlan.codexOnly
-      ? '  ✗ Codex 上下文包生成失败'
-      : '  ! Codex 上下文包生成失败；完整输出已保留';
-    console.error(label);
-    const errors = Array.isArray(error.errors) ? error.errors : [error.message];
-    errors.filter(Boolean).forEach(message => console.error(`    - ${message}`));
-    process.exitCode = 1;
-  }
+    }),
+});
+
+if (codexPack) {
+  console.log(`  ✓ Codex 上下文包已生成 (${codexPack.files.length} 个文件)`);
+  codexPack.warnings.forEach(warning => console.log(`  ! ${warning}`));
+}
+if (codexError) {
+  const label = runPlan.codexOnly
+    ? '  ✗ Codex 上下文包生成失败'
+    : '  ! Codex 上下文包生成失败；完整输出已保留';
+  console.error(label);
+  const errors = Array.isArray(codexError.errors) ? codexError.errors : [codexError.message];
+  errors.filter(Boolean).forEach(message => console.error(`    - ${message}`));
+  process.exitCode = 1;
 }
 
 // ── Summary ──
