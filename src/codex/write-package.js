@@ -25,9 +25,13 @@ const defaultFileOps = Object.freeze({
 });
 
 function requireExistingFile(path, label, fileOps) {
-  if (typeof path !== 'string' || !path || !fileOps.existsSync(path) || !fileOps.statSync(path).isFile()) {
+  if (typeof path !== 'string' || !path || !isExistingFile(path, fileOps)) {
     throw new TypeError(`${label} must reference an existing file`);
   }
+}
+
+function isExistingFile(path, fileOps) {
+  return fileOps.existsSync(path) && fileOps.statSync(path).isFile();
 }
 
 function uniqueBackupPath(outDir, fileOps) {
@@ -41,7 +45,7 @@ function uniqueBackupPath(outDir, fileOps) {
   return path;
 }
 
-function validateStagingPackage(staging, textFiles, fullPageExists, fileOps) {
+function validateStagingPackage(staging, textFiles, stagedFiles, fileOps) {
   const files = Object.fromEntries(Object.keys(textFiles).map(name => [
     name,
     fileOps.readFileSync(join(staging, name), 'utf8'),
@@ -49,9 +53,9 @@ function validateStagingPackage(staging, textFiles, fullPageExists, fileOps) {
   return assertValidCodexPackage({
     files,
     referencePath: join(staging, 'reference.png'),
-    referenceExists: fileOps.existsSync(join(staging, 'reference.png')),
-    fullPagePath: fullPageExists ? join(staging, 'reference-full.png') : null,
-    fullPageExists,
+    referenceExists: stagedFiles.referenceExists,
+    fullPagePath: stagedFiles.fullPageExists ? join(staging, 'reference-full.png') : null,
+    fullPageExists: stagedFiles.fullPageExists,
   });
 }
 
@@ -78,30 +82,34 @@ export function writeCodexContextPack({
     throw new TypeError('outDir must reference an existing directory');
   }
 
-  const fullPageExists = typeof fullPagePath === 'string'
+  const sourceFullPageExists = typeof fullPagePath === 'string'
     && fullPagePath.length > 0
-    && ops.existsSync(fullPagePath)
-    && ops.statSync(fullPagePath).isFile();
-  const model = buildVerifiedVisualModel(design, evidence, {
-    hostname,
-    fullPageCaptured: fullPageExists,
-    fullPageError,
-  });
-  const textFiles = buildVerifiedContextFiles(model);
+    && isExistingFile(fullPagePath, ops);
   const target = join(outDir, 'codex-context');
   let staging = null;
 
   try {
     staging = ops.mkdtempSync(join(outDir, '.codex-context-staging-'));
-    for (const [name, content] of Object.entries(textFiles)) {
-      ops.writeFileSync(join(staging, name), content, 'utf8');
-    }
     ops.copyFileSync(sourceReferencePath, join(staging, 'reference.png'));
-    if (fullPageExists) {
+    if (sourceFullPageExists) {
       ops.copyFileSync(fullPagePath, join(staging, 'reference-full.png'));
     }
 
-    const validation = validateStagingPackage(staging, textFiles, fullPageExists, ops);
+    const stagedFiles = {
+      referenceExists: isExistingFile(join(staging, 'reference.png'), ops),
+      fullPageExists: isExistingFile(join(staging, 'reference-full.png'), ops),
+    };
+    const model = buildVerifiedVisualModel(design, evidence, {
+      hostname,
+      fullPageCaptured: stagedFiles.fullPageExists,
+      fullPageError,
+    });
+    const textFiles = buildVerifiedContextFiles(model);
+    for (const [name, content] of Object.entries(textFiles)) {
+      ops.writeFileSync(join(staging, name), content, 'utf8');
+    }
+
+    const validation = validateStagingPackage(staging, textFiles, stagedFiles, ops);
     if (!ops.existsSync(target)) {
       ops.renameSync(staging, target);
       staging = null;
@@ -127,7 +135,7 @@ export function writeCodexContextPack({
     const files = [
       ...Object.keys(textFiles),
       'reference.png',
-      ...(fullPageExists ? ['reference-full.png'] : []),
+      ...(stagedFiles.fullPageExists ? ['reference-full.png'] : []),
     ];
     return { directory: target, files, warnings: validation.warnings, model };
   } finally {
