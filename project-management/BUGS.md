@@ -14,7 +14,12 @@
 
 ## 已修复
 
-（暂无 — 初始版本尚未发现 CLI 专项 Bug）
+| Bug | 状态 | 回归测试 |
+|-----|------|----------|
+| 机器文件出现 `[object Object]` | ✅ 已修复 | `test/codex-format.test.js`、`test/greptile-codex-regression.test.js` |
+| radius/shadow 的断裂 Token 引用（如 `{radius.*}`、`{shadow.*}`） | ✅ 已修复 | `test/codex-format.test.js`、`test/greptile-codex-regression.test.js` |
+| 把低证据颜色或浏览器默认色误写成颜色语义 | ✅ 已修复 | `test/codex-model.test.js`、`test/codex-format.test.js` |
+| 动画周期未与真实选择器目标绑定 | ✅ 已修复 | `test/codex-model.test.js`、`test/codex-format.test.js`、`test/greptile-codex-regression.test.js` |
 
 ---
 

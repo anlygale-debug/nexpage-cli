@@ -166,20 +166,27 @@ nexpage-output/<域名>/
 
 ## Codex Profile
 
-传入 `--profile codex` 后，只生成：
+`nexpage <url> --profile codex -o <目录>` 只生成 `codex-context/`；它不再写入原有的完整导出。`nexpage <url> --with-codex -o <目录>` 则保留完整导出，并在同一输出目录附加这个可信包。
+
+正常完成完整页面截图时，`codex-context/` 的文件契约为 5/6 个：
 
 ```text
 codex-context/
-  ├── reference.png    # 当前视口视觉参考
+  ├── reference.png       # 当前视口视觉参考
+  ├── reference-full.png  # 完整页面视觉参考
   ├── CODEX.md         # 为 Codex 清洗、校验后的设计上下文与实现规则
   ├── tokens.json      # 结构化设计 Token
   ├── variables.css    # 可直接接入项目的 CSS Variables
   └── motion.json      # 仅在检测到有效动效时生成
 ```
 
-让 Codex 开发新页面时，只需把 `codex-context/` 目录作为视觉上下文，不需要加载全量输出。
+前三个文本文件和 `reference.png` 是必有文件；`reference-full.png` 在完整页面截图成功时加入；`motion.json` 只在发现已绑定真实目标与时长的动效时加入。因此完整页面包是 5 个文件（无有效动效）或 6 个文件（有有效动效）。如果完整页面截图无法写入，包会降级为首屏覆盖：4 个文件（无有效动效）或 5 个文件（有有效动效），并在 `CODEX.md` 和终端警告中说明不能推断完整页面节奏。
 
-如果需要保留原有 40 多个完整文件并同时生成上述目录，请改用 `--with-codex`。
+让 Codex 开发新页面时，把整个输出目录交给它，并只需说明：**“这是我的目标视觉风格”**。如果还有具体产品需求，再继续描述目标用户、功能与内容即可。
+
+nexpage 本身不接入 Codex 或 OpenAI API，不需要 API Key，也不会产生模型 Token 费用。它只在本地运行 CLI、浏览器采集和文件写入；是否调用模型由你随后使用的 Codex 环境决定。
+
+这个包迁移的是颜色、排版、间距、形状、材质和动效等**视觉语言**，不是来源网站的复刻模板：不得复制来源品牌、Logo、文案、专有插画、产品内容或信息架构。新页面应先按自己的产品需求设计信息架构，再应用视觉语言。
 
 `CODEX.md` 会明确区分“提取事实”和“启发式推断”，并进行以下质量处理：
 
@@ -190,7 +197,7 @@ codex-context/
 - 未使用的 Keyframe 和空滚动信号不会生成 `motion.json`
 - 截图与自动推断冲突时，明确要求 Codex 以截图和产品需求为准
 
-推荐提示词：
+可选提示词：
 
 ```text
 请先读取 codex-context/CODEX.md，并按其中的“使用顺序”查看其余文件。
