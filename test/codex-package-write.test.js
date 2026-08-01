@@ -49,6 +49,11 @@ test('writes a validated package and atomically replaces an old package', () => 
     assert.equal(existsSync(join(old, 'old.txt')), false);
     assert.deepEqual(result.files.sort(), [
       'CODEX.md',
+      'STYLE-GUARDRAILS.md',
+      'acceptance-checklist.md',
+      'codex-instructions.md',
+      'components.md',
+      'design-strict.md',
       'motion.json',
       'reference-full.png',
       'reference.png',

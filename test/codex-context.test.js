@@ -152,6 +152,11 @@ test('builds the exact default Codex package and adds motion only when meaningfu
   const withMotion = nexpage.buildCodexContextFiles(fixtureWithVerifiedMotion(), verifiedOptions);
   assert.deepEqual(Object.keys(withMotion).sort(), [
     'CODEX.md',
+    'STYLE-GUARDRAILS.md',
+    'acceptance-checklist.md',
+    'codex-instructions.md',
+    'components.md',
+    'design-strict.md',
     'motion.json',
     'tokens.json',
     'variables.css',
@@ -160,9 +165,46 @@ test('builds the exact default Codex package and adds motion only when meaningfu
   const withoutMotion = nexpage.buildCodexContextFiles(fixture({ motion: { keyframes: [] } }), verifiedOptions);
   assert.deepEqual(Object.keys(withoutMotion).sort(), [
     'CODEX.md',
+    'STYLE-GUARDRAILS.md',
+    'acceptance-checklist.md',
+    'codex-instructions.md',
+    'components.md',
+    'design-strict.md',
     'tokens.json',
     'variables.css',
   ]);
+});
+
+test('builds an execution-ready visual package with strict rules and acceptance checks', () => {
+  const files = nexpage.buildCodexContextFiles(fixtureWithVerifiedMotion(), verifiedOptions);
+
+  for (const fileName of [
+    'design-strict.md',
+    'components.md',
+    'codex-instructions.md',
+    'STYLE-GUARDRAILS.md',
+    'acceptance-checklist.md',
+  ]) {
+    assert.equal(typeof files[fileName], 'string', fileName);
+    assert.ok(files[fileName].trim().length > 100, fileName);
+  }
+  assert.match(files['design-strict.md'], /#28e99f/);
+  assert.match(files['components.md'], /主操作|Primary action/i);
+  assert.match(files['codex-instructions.md'], /先.*需求|需求.*先/);
+  assert.match(files['STYLE-GUARDRAILS.md'], /禁止|不得/);
+  assert.match(files['acceptance-checklist.md'], /截图|reference\.png/);
+});
+
+test('tells vision-capable Codex to arbitrate uncertain semantic labels against screenshots', () => {
+  const files = nexpage.buildCodexContextFiles(fixtureWithVerifiedMotion(), verifiedOptions);
+
+  assert.match(files['CODEX.md'], /自动.*语义.*(?:误判|缺失)/);
+  assert.match(files['CODEX.md'], /语义角色.*冲突.*截图为准/);
+  assert.match(files['CODEX.md'], /允许.*重新映射.*actionPrimary/);
+  assert.match(files['CODEX.md'], /精确数值.*Token|Token.*精确数值/);
+  assert.match(files['codex-instructions.md'], /不得盲目.*actionPrimary/);
+  assert.match(files['acceptance-checklist.md'], /重新映射.*记录/);
+  assert.doesNotMatch(files['acceptance-checklist.md'], /主操作使用已验证颜色 `#28e99f`/);
 });
 
 test('recognizes only the explicit codex profile flag', () => {
@@ -197,6 +239,11 @@ test('writes an isolated codex-context directory with a copied visual reference'
     assert.equal(result.directory, join(root, 'codex-context'));
     assert.deepEqual(result.files.sort(), [
       'CODEX.md',
+      'STYLE-GUARDRAILS.md',
+      'acceptance-checklist.md',
+      'codex-instructions.md',
+      'components.md',
+      'design-strict.md',
       'motion.json',
       'reference.png',
       'tokens.json',

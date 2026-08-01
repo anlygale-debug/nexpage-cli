@@ -53,6 +53,28 @@ test('model rejects one-off measurements and source information architecture', (
   assert.ok(model.rejected.some(item => item.path.includes('spacing')));
 });
 
+test('model compresses repeated layout measurements into an implementation-ready spacing scale', () => {
+  const spacingDesign = {
+    ...design,
+    spacing: {
+      scale: [
+        { value: 24, count: 5 }, { value: 29, count: 8 }, { value: 32, count: 9 },
+        { value: 37, count: 6 }, { value: 40, count: 5 }, { value: 44, count: 7 },
+        { value: 48, count: 8 }, { value: 53, count: 4 }, { value: 56, count: 8 },
+        { value: 60, count: 7 }, { value: 64, count: 8 }, { value: 80, count: 5 },
+        { value: 84, count: 5 }, { value: 88, count: 5 }, { value: 121, count: 4 },
+        { value: 128, count: 3 },
+      ],
+    },
+  };
+
+  const model = buildVerifiedVisualModel(spacingDesign, greptileEvidence, { fullPageCaptured: true });
+
+  assert.deepEqual(model.verified.spacing.map(entry => entry.value), [24, 32, 40, 48, 56, 64, 80, 88, 128]);
+  assert.ok(model.rejected.some(item => item.value === 29));
+  assert.ok(model.rejected.some(item => item.value === 44));
+});
+
 test('model binds animation targets to actual durations', () => {
   const model = buildVerifiedVisualModel(design, greptileEvidence, { fullPageCaptured: true });
   assert.deepEqual(model.verified.motion.map(item => item.value.duration), [6000, 40000]);
@@ -320,6 +342,29 @@ test('model does not treat a near-white tint as more chromatic than the primary 
   const model = buildVerifiedVisualModel(design, { ...greptileEvidence, actions }, { fullPageCaptured: true });
 
   assert.equal(model.verified.colors.actionPrimary.value, '#28e99f');
+});
+
+test('model favors the first above-fold main CTA over a larger repeated secondary treatment', () => {
+  const makeAction = ({ backgroundColor, index, scope, text, x, y, width }) => ({
+    ...greptileEvidence.actions[0],
+    selector: `.vercel-action-${index}`,
+    text,
+    scope,
+    inViewport: true,
+    mainOrder: scope === 'main' ? index - 2 : null,
+    rect: { x, y, width, height: 48 },
+    style: { ...greptileEvidence.actions[0].style, backgroundColor, borderRadius: '24px' },
+  });
+  const actions = [
+    makeAction({ backgroundColor: 'rgb(255, 255, 255)', index: 0, scope: 'nav', text: 'Get a Demo', x: 970, y: 20, width: 96 }),
+    makeAction({ backgroundColor: 'rgb(23, 23, 23)', index: 1, scope: 'nav', text: 'Sign Up', x: 1160, y: 20, width: 88 }),
+    makeAction({ backgroundColor: 'rgb(23, 23, 23)', index: 2, scope: 'main', text: 'Deploy now', x: 96, y: 360, width: 128 }),
+    makeAction({ backgroundColor: 'rgb(255, 255, 255)', index: 3, scope: 'main', text: 'Talk to sales', x: 236, y: 360, width: 164 }),
+  ];
+
+  const model = buildVerifiedVisualModel(design, { ...greptileEvidence, actions }, { fullPageCaptured: true });
+
+  assert.equal(model.verified.colors.actionPrimary.value, '#171717');
 });
 
 test('model keeps the first minority body family as a candidate when another family wins', () => {

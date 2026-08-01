@@ -147,6 +147,8 @@ export { extractMotion } from './extractors/motion.js';
 export { extractVoice } from './extractors/voice.js';
 export { extractComponentAnatomy, formatAnatomyStubs } from './extractors/component-anatomy.js';
 export { collectCodexEvidence } from './codex/collect-evidence.js';
+export { captureScrollReference, prepareCodexCapture } from './codex/prepare-capture.js';
+export { navigateForCapture } from './codex/navigate.js';
 export { buildVerifiedVisualModel } from './codex/verified-model.js';
 export {
   buildVerifiedContextFiles,

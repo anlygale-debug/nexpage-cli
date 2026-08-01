@@ -199,10 +199,18 @@ export function formatVerifiedCodexContext(model) {
   lines.push('- 不复制来源品牌、Logo、文案、专有插画、产品内容或信息架构。');
   lines.push('- 如果尚未收到新产品需求，确认已读取视觉基准后等待用户继续说明需求。');
   lines.push('- 如果视觉包与产品需求同时提供，先设计新产品自己的信息架构，再应用本视觉语言。');
-  lines.push('- 截图决定视觉比例，已验证规则决定语义，机器文件提供精确数值；候选不是强制规范。', '');
+  lines.push('- 自动提取的语义角色可能误判或缺失；必须先用视觉能力检查截图，再决定如何使用结构化规则。', '');
 
   lines.push('## 阅读顺序与证据优先级', '');
   lines.push('用户需求 → 两张截图 → CODEX 已验证规则 → CSS/Token/Motion → 低可信候选。', '');
+
+  lines.push('## 视觉冲突裁决（必须执行）', '');
+  lines.push('- 开始实现前必须实际查看 `reference.png`；有长页证据时也要查看 `reference-full.png`，不能只阅读文字和 Token。');
+  lines.push('- 当自动语义角色（如 actionPrimary、surface、ink）或视觉层级与截图冲突时，语义角色以截图为准，不得盲从自动标签。');
+  lines.push('- 允许根据截图重新映射 `actionPrimary` 等角色，例如把自动标为次操作、表面色或候选的颜色用于真正的主操作。');
+  lines.push('- 截图负责判断“哪个元素是什么角色”，Token/CSS 负责提供该元素已采集到的精确数值；数值可靠不代表语义标签一定可靠。');
+  lines.push('- 角色缺失时，先从已提取颜色、组件和低可信候选中寻找与截图匹配的精确值；仍无法确认时，按截图克制补全并在完成报告中标明推断。');
+  lines.push('- 忽略截图中的 Cookie、隐私、地区、登录、验证等临时浮层，不把它们作为目标视觉语言。', '');
 
   lines.push('## 已验证视觉语言', '');
   const colors = Object.entries(model?.verified?.colors || {});
@@ -323,11 +331,149 @@ export function formatVerifiedCodexContext(model) {
   return lines.join('\n');
 }
 
+function verifiedColorLines(model) {
+  return Object.entries(model?.verified?.colors || {}).flatMap(([name, entry]) => {
+    const value = cleanString(verifiedValue(entry));
+    return value ? [`- ${name}：\`${value}\``] : [];
+  });
+}
+
+function verifiedTypographyLines(model) {
+  return Object.entries(model?.verified?.typography || {}).flatMap(([name, entry]) => {
+    const value = verifiedValue(entry);
+    const family = cleanString(value?.family);
+    if (!family) return [];
+    const details = [family, finiteNumber(value?.size) !== null && `${value.size}px`, cleanString(value?.weight)]
+      .filter(Boolean);
+    return [`- ${name}：${details.join(' · ')}`];
+  });
+}
+
+function formatStrictDesign(model) {
+  const lines = ['# 严格视觉规则', '', '以下数值来自真实渲染证据，但自动分配的语义角色可能出错。先用截图确认角色，再把对应精确数值作为不可随意改写的视觉锚点。', ''];
+  lines.push('## 必须保持', '');
+  const colors = verifiedColorLines(model);
+  const typography = verifiedTypographyLines(model);
+  if (colors.length) lines.push('### 颜色角色', '', ...colors, '');
+  if (typography.length) lines.push('### 排版角色', '', ...typography, '');
+  const spacing = (model?.verified?.spacing || []).map(entry => finiteNumber(verifiedValue(entry))).filter(value => value !== null);
+  if (spacing.length) lines.push('### 间距尺度', '', `- 只优先使用：${spacing.map(value => `${value}px`).join('、')}。`, '');
+  lines.push('## 硬性失败条件', '');
+  lines.push('- 把主操作色替换成更常见的紫色渐变、蓝色按钮或框架默认色。');
+  lines.push('- 忽略 `reference.png` 的首屏比例，生成普通模板化 Hero。');
+  lines.push('- 擅自加入玻璃拟态、柔光、渐变、超大圆角或阴影，而截图和已验证规则没有支持。');
+  lines.push('- 复制来源品牌、Logo、文案、插画或产品信息架构。');
+  lines.push('- 把低可信候选当成强制 Token。', '');
+  lines.push('- 在截图明显不支持时仍盲目使用 `actionPrimary`、surface 或组件语义标签。', '');
+  return lines.join('\n');
+}
+
+function formatComponents(model) {
+  const lines = ['# 组件视觉规则', '', '组件需要继承来源视觉语言，但内容、名称和业务结构必须来自用户自己的产品。', ''];
+  const actions = Array.isArray(model?.verified?.components?.actions) ? model.verified.components.actions : [];
+  lines.push('## 主操作与次操作', '');
+  if (!actions.length) lines.push('- 没有足够的重复证据建立完整按钮组件；以 `reference.png` 和已验证操作色为准。');
+  for (const entry of actions) {
+    const value = verifiedValue(entry) || {};
+    const label = value.role === 'primary' ? '主操作' : value.role === 'secondary' ? '次操作' : '操作';
+    const details = [value.background && `背景 \`${value.background}\``, value.foreground && `文字 \`${value.foreground}\``];
+    if (value.shape?.borderRadius !== undefined) details.push(`圆角 ${value.shape.borderRadius}px`);
+    if (cleanString(value.shape?.clipPath)) details.push(`裁切 ${cleanString(value.shape.clipPath)}`);
+    lines.push(`- ${label}：${details.filter(Boolean).join('；')}。`);
+  }
+  lines.push('', '## 卡片与表面', '');
+  const cards = Array.isArray(model?.verified?.components?.cards) ? model.verified.components.cards : [];
+  if (!cards.length) lines.push('- 没有足够的重复证据建立卡片 Token；不要自动套用常见 SaaS 圆角卡片。');
+  cards.forEach((entry, index) => {
+    const value = verifiedValue(entry) || {};
+    const details = [value.background && `背景 \`${value.background}\``, value.foreground && `文字 \`${value.foreground}\``];
+    if (value.border) details.push(`边框 ${value.border.width}px \`${value.border.color}\``);
+    if (value.shape?.borderRadius !== undefined) details.push(`圆角 ${value.shape.borderRadius}px`);
+    lines.push(`- 卡片 ${index + 1}：${details.filter(Boolean).join('；')}。`);
+  });
+  lines.push('', '## 状态补全原则', '', '- hover、focus、active 和 disabled 状态优先保持同一形状、字体和色彩关系。');
+  lines.push('- 原页面没有提供状态证据时，允许为可用性补全，但不得改变视觉身份。', '');
+  return lines.join('\n');
+}
+
+function formatCodexInstructions(model) {
+  const hasFullPage = model?.coverage?.fullPage === true;
+  return [
+    '# Codex 执行说明', '',
+    '## 阅读顺序', '',
+    '1. 先阅读 `CODEX.md`，确认用途、证据边界和用户的新产品需求。',
+    '2. 查看 `reference.png`，理解首屏比例、排版尺度和视觉重心。',
+    hasFullPage ? '3. 查看 `reference-full.png`，理解长页面节奏和表面变化。' : '3. 当前没有可靠完整页证据，不推断长页面节奏。',
+    '4. 阅读 `design-strict.md`、`components.md` 和 `STYLE-GUARDRAILS.md`。',
+    '5. 使用 `tokens.json` 与 `variables.css` 中的精确值实现。', '',
+    '## 实现流程', '',
+    '- 先根据用户需求设计信息架构，再应用视觉语言。',
+    '- 必须用视觉能力查看两张参考图；不得盲目把 `actionPrimary` 或其他自动语义标签直接当作正确答案。',
+    '- 如果截图与语义标签冲突，按截图重新分配角色，再从 Token、组件规则或候选中使用视觉匹配的精确值。',
+    '- 开始编码前，列出页面区域、将使用的视觉锚点以及需要补全的未知项。',
+    '- 优先复用已验证 Token；无法证明的设计选择必须保持克制。',
+    '- 同时检查桌面和移动端，不要通过缩小桌面页面代替响应式设计。',
+    '- 完成后逐项执行 `acceptance-checklist.md`，发现硬性失败时继续修正。', '',
+    '## 完成报告', '',
+    '- 说明使用了哪些已验证视觉规则。',
+    '- 标出哪些部分属于合理补全，而不是来源事实。',
+    '- 说明没有复制来源品牌、文案和信息架构。', '',
+  ].join('\n');
+}
+
+function formatStyleGuardrails(model) {
+  const anchors = [...verifiedColorLines(model), ...verifiedTypographyLines(model)];
+  return [
+    '# STYLE GUARDRAILS', '',
+    '## 视觉锚点', '',
+    ...(anchors.length ? anchors : ['- 当前结构化锚点有限，必须以两张参考截图为最高视觉依据。']), '',
+    '## 防跑偏规则', '',
+    '- 禁止把页面做成通用 AI SaaS 模板。',
+    '- 不得为了“更现代”而替换已验证的主色、字体、形状和表面关系。',
+    '- 自动语义标签与截图冲突时，按截图重新映射角色；这不等于随意替换视觉数值。',
+    '- 截图没有出现渐变、玻璃、柔光、厚阴影或大圆角时，不得自行加入。',
+    '- 强调色只用于真正需要强调的位置，不得平均铺满页面。',
+    '- 保持标题与正文的尺度差、内容密度和留白节奏，不只复制颜色。',
+    '- 禁止复制来源 Logo、品牌名称、原文案、插画和业务模块顺序。', '',
+  ].join('\n');
+}
+
+function formatAcceptanceChecklist(model) {
+  const primary = cleanString(verifiedValue(model?.verified?.colors?.actionPrimary));
+  return [
+    '# 视觉验收清单', '',
+    '## 视觉一致性', '',
+    '- [ ] 与 `reference.png` 并排检查，首屏视觉重心、字号比例和留白关系一致。',
+    model?.coverage?.fullPage === true
+      ? '- [ ] 与 `reference-full.png` 并排检查，长页面密度与深浅表面节奏一致。'
+      : '- [ ] 没有假装掌握未采集的长页面节奏。',
+    primary
+      ? `- [ ] 已用截图确认自动主操作标签 \`${primary}\`；若不一致，已重新映射正确角色并记录原因。`
+      : '- [ ] 已从截图判断是否存在主操作；没有在证据不足时虚构主操作颜色。',
+    '- [ ] display、body 和 mono 字体角色没有混用。',
+    '- [ ] 按钮、卡片、输入框的圆角、边框和阴影属于同一形状语言。',
+    '- [ ] 强调色比例接近参考图，没有为了热闹而扩大使用面积。', '',
+    '## 产品与可用性', '',
+    '- [ ] 页面信息架构来自用户需求，不是来源网页的板块复刻。',
+    '- [ ] 没有复制来源品牌、Logo、文案或专有资产。',
+    '- [ ] 键盘焦点可见，文字和操作具备可读对比度。',
+    '- [ ] 1280px 桌面与 390px 移动端都完成检查。', '',
+    '## 硬性失败', '',
+    '- [ ] 没有出现错误主色、普通紫色渐变、无证据玻璃拟态或模板化 Hero。',
+    '- [ ] 没有断裂 Token、非法 CSS、溢出、遮挡或不可操作控件。', '',
+  ].join('\n');
+}
+
 export function buildVerifiedContextFiles(model) {
   const files = {
     'CODEX.md': formatVerifiedCodexContext(model),
     'tokens.json': formatVerifiedTokens(model),
     'variables.css': formatVerifiedCss(model),
+    'design-strict.md': formatStrictDesign(model),
+    'components.md': formatComponents(model),
+    'codex-instructions.md': formatCodexInstructions(model),
+    'STYLE-GUARDRAILS.md': formatStyleGuardrails(model),
+    'acceptance-checklist.md': formatAcceptanceChecklist(model),
   };
   if ((model?.verified?.motion || []).length > 0) {
     files['motion.json'] = formatVerifiedMotion(model);

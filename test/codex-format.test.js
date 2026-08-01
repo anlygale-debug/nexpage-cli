@@ -19,7 +19,17 @@ const model = buildVerifiedVisualModel(design, greptileEvidence, { fullPageCaptu
 
 test('machine files contain verified values and no object strings', () => {
   const files = buildVerifiedContextFiles(model);
-  assert.deepEqual(Object.keys(files).sort(), ['CODEX.md', 'motion.json', 'tokens.json', 'variables.css']);
+  assert.deepEqual(Object.keys(files).sort(), [
+    'CODEX.md',
+    'STYLE-GUARDRAILS.md',
+    'acceptance-checklist.md',
+    'codex-instructions.md',
+    'components.md',
+    'design-strict.md',
+    'motion.json',
+    'tokens.json',
+    'variables.css',
+  ]);
   assert.doesNotMatch(files['variables.css'], /\[object Object\]|undefined|null/);
   assert.doesNotMatch(files['tokens.json'], /\[object Object\]|undefined/);
   assert.match(files['variables.css'], /--color-action-primary: #28e99f;/);

@@ -201,8 +201,16 @@ function selectActions(actions, rejected) {
     const { chroma } = colorMetrics(group.background);
     const repetition = Math.log2(group.actions.length + 1);
     const prominence = Math.log10(group.maxArea + 1);
+    const aboveFoldMainActions = group.actions.filter(action => action.scope === 'main'
+      && action.inViewport === true);
+    const firstMainOrder = Math.min(...aboveFoldMainActions
+      .map(action => finiteNumber(action.mainOrder))
+      .filter(value => value !== null));
+    const mainIntent = aboveFoldMainActions.length
+      ? 12 + (firstMainOrder === 0 ? 8 : firstMainOrder === 1 ? 2 : 0)
+      : 0;
     group.score = (group.scopes.size * 5) + (repetition * 2)
-      + (chroma * 12) + (prominence * 2);
+      + (chroma * 12) + (prominence * 2) + mainIntent;
     group.isVerified = group.actions.length > 1
       || group.scopes.size > 1
       || group.actions.some(action => action.scope === 'main');
@@ -363,11 +371,11 @@ function buildSpacing(design, rejected) {
       addRejected(rejected, `spacing.scale[${index}]`, value, 'one-off measurement outside the 4-128px spacing range');
       return;
     }
-    const nearestFour = Math.round(value / 4) * 4;
-    const followsBaseRhythm = Math.abs(value - nearestFour) <= 1;
+    const followsBaseRhythm = Number.isInteger(value)
+      && (value <= 32 ? value % 4 === 0 : value % 8 === 0);
     const repeated = (counts.get(value) || 0) > 1 || reportedCount > 1;
-    if (!followsBaseRhythm && !repeated) {
-      addRejected(rejected, `spacing.scale[${index}]`, value, 'one-off measurement does not follow a 4/8px base rhythm');
+    if (!followsBaseRhythm) {
+      addRejected(rejected, `spacing.scale[${index}]`, value, 'layout measurement does not follow an implementation-ready 4/8px spacing rhythm');
       return;
     }
     if (!accepted.has(value)) {

@@ -155,15 +155,26 @@ export async function collectCodexEvidence(page) {
       return true;
     };
 
+    let mainActionOrder = 0;
     const evidence = {
       viewport: { width: window.innerWidth, height: window.innerHeight },
       headings: collect('h1, h2, h3', limits.headings),
       bodyText: collect('p, li, blockquote', limits.bodyText),
       labels: collect('nav a, nav button, [role="navigation"] a, [data-label], [class*="label"], [class*="eyebrow"], [class*="tag"], [class*="badge"], code, kbd', limits.labels),
-      actions: collect('button, a, [role="button"]', limits.actions, element => ({
-        ...snapshotElement(element),
-        scope: actionScope(element),
-      })),
+      actions: collect('button, a, [role="button"]', limits.actions, element => {
+        const snapshot = snapshotElement(element);
+        const scope = actionScope(element);
+        const inViewport = snapshot.rect.y < window.innerHeight
+          && snapshot.rect.y + snapshot.rect.height > 0
+          && snapshot.rect.x < window.innerWidth
+          && snapshot.rect.x + snapshot.rect.width > 0;
+        return {
+          ...snapshot,
+          scope,
+          inViewport,
+          mainOrder: scope === 'main' ? mainActionOrder++ : null,
+        };
+      }),
       cards: collect('[class*="card"], [class*="tile"], [class*="panel"], [data-card]', limits.cards),
       surfaces: [],
       animations: [],

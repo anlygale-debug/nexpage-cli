@@ -8,7 +8,7 @@ import { extractDesignLanguage, formatDtcgTokens, formatMarkdown, formatTailwind
   formatCssVars, formatPreview, formatFigma, formatReactTheme, formatShadcnTheme,
   formatMotionTokens, formatWordPress, formatVueTheme, formatSvelteTheme,
   formatAnatomyStubs, formatV0Prompt, formatLovablePrompt, formatCursorPrompt,
-  formatClaudeArtifactPrompt, collectCodexEvidence, planCodexRun, runCodexOutputSequence,
+  formatClaudeArtifactPrompt, collectCodexEvidence, captureScrollReference, prepareCodexCapture, navigateForCapture, planCodexRun, runCodexOutputSequence,
   writeCodexContextPack,
   resolveOutputDirectory } from '../src/index.js';
 
@@ -72,7 +72,9 @@ let browserClosed = false;
 try {
 const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
 const page = await context.newPage();
-await page.goto(rawUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
+const navigation = await navigateForCapture(page, rawUrl);
+if (navigation.attempts > 1) console.log(`  ! 首次连接失败，第 ${navigation.attempts} 次尝试成功`);
+if (navigation.degraded) console.log(`  ! 导航报告超时，但页面已渲染，将继续提取：${navigation.warning}`);
 await page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => {});
 console.log(`  ✓ 浏览器已打开 — ${await page.title()}`);
 console.log('');
@@ -86,6 +88,20 @@ if (!skip) {
       resolve();
     });
   });
+  console.log('');
+}
+
+if (runPlan.wantsCodex) {
+  console.log('  ◐ 正在准备稳定的视觉页面...');
+  try {
+    const preparation = await prepareCodexCapture(page);
+    const details = [];
+    if (preparation.hiddenOverlays) details.push(`移除 ${preparation.hiddenOverlays} 个临时弹层`);
+    if (preparation.scrollSteps) details.push(`预热 ${preparation.scrollSteps} 个页面位置`);
+    console.log(`  ✓ 视觉页面已准备${details.length ? ` — ${details.join('，')}` : ''}`);
+  } catch (error) {
+    console.log(`  ! 页面预处理失败，将使用当前页面：${error.message}`);
+  }
   console.log('');
 }
 
@@ -134,10 +150,15 @@ if (runPlan.wantsCodex) {
     evidence = await collectCodexEvidence(page);
     const fullPageCapturePath = join(captureDirectory, 'reference-full.png');
     try {
-      await page.screenshot({ path: fullPageCapturePath, fullPage: true, type: 'png' });
+      await captureScrollReference(page, fullPageCapturePath);
       fullPagePath = fullPageCapturePath;
     } catch (error) {
-      fullPageError = error.message;
+      try {
+        await page.screenshot({ path: fullPageCapturePath, fullPage: true, type: 'png', animations: 'disabled' });
+        fullPagePath = fullPageCapturePath;
+      } catch (fallbackError) {
+        fullPageError = `${error.message}; fallback failed: ${fallbackError.message}`;
+      }
     }
   } catch (error) {
     codexPreparationError = error;
