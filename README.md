@@ -1,247 +1,199 @@
-# nexpage
+# Nexpage
 
-从任意网站提取设计系统的命令行工具。用可见浏览器打开目标网站，你可以登录、导航到任意页面，然后一键提取完整的色彩、排版、间距、动效等设计 Token。
+[![CI](https://github.com/anlygale-debug/nexpage-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/anlygale-debug/nexpage-cli/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Node.js 20+](https://img.shields.io/badge/Node.js-20%2B-339933.svg)](https://nodejs.org/)
 
-**和 designlang 的区别**：designlang 用 headless 浏览器，遇到需要登录或人机验证的网站无能为力。nexpage 先弹出一个可见的 Chromium 窗口让你手动操作，确认后再从当前页面提取，不存在任何反爬限制。
+[English](README.en.md) · 简体中文
+
+Nexpage 是一个本地运行的网页视觉语言提取 CLI。它打开一个可见的 Chromium 窗口，让你在需要时手动登录或导航，然后从当前实际渲染页面提取颜色、排版、间距、形状、材质、动效和设计 Token。
+
+它还可以生成专门交给 Codex 等视觉 Agent 使用的 `codex-context/`：源码负责精确测量，截图负责视觉语义，Agent 在两者冲突时进行视觉裁决。
+
+> 项目状态：早期 `0.x` 版本。已经过自动化测试和多站点真实回归，但复杂 Canvas、WebGL、强反自动化页面和特殊登录流程仍可能失败。
+
+## 为什么做 Nexpage
+
+普通无头抓取在登录页、地区选择、延迟加载和复杂前端页面上经常拿不到用户真正看到的状态。Nexpage 使用可见浏览器：
+
+- 你可以在提取前手动登录、关闭提示或进入目标页面；
+- 提取器复用同一个浏览器 Page，不重新打开无头页面；
+- Codex 模式会清理常见临时弹层、滚动预热懒加载内容并生成长页参考图；
+- 不内置 OpenAI、Codex 或其他模型 API，不需要 API Key，也不会产生模型调用费用。
+
+Nexpage 不绕过验证码、访问控制或网站安全措施。网站仍可阻止自动化浏览器，请遵守目标网站条款并只处理你有权访问的内容。
+
+## 功能
+
+- 可见 Chromium 交互式提取
+- 颜色、排版、间距、阴影、边框、渐变、动效和组件证据
+- W3C DTCG、CSS Variables、Tailwind、Figma Variables 等 40+ 完整输出
+- `--profile codex`：只生成经过校验的 Codex 视觉包
+- `--with-codex`：完整输出旁附加 Codex 视觉包
+- 首屏截图与滚动拼接长页截图
+- 常见 Cookie、隐私、地区和登录弹层清理
+- 导航超时重试与已渲染页面降级继续
+- Codex 包暂存、完整性校验和原子替换
+- macOS Finder 输出目录选择与防覆盖命名
+
+## 环境要求
+
+- Node.js 20 或更高版本
+- npm
+- Playwright Chromium
+- macOS、Linux 或 Windows；`--pick-output` 仅支持 macOS Finder
 
 ## 安装
 
+当前推荐从源码安装：
+
 ```bash
-cd nexpage-cli && npm link
+git clone https://github.com/anlygale-debug/nexpage-cli.git
+cd nexpage-cli
+npm install
+npx playwright install chromium
+npm link
 ```
 
-前置依赖：
-
-- Node.js ≥ 20
-- designlang（全局安装）：`npm i -g designlang`
-- Playwright Chromium：`npx playwright install chromium`
-
-## 使用
+确认安装：
 
 ```bash
-nexpage <url> [选项]
+nexpage --help
 ```
 
-### 选项
+Nexpage 是独立 Fork，不需要另外安装 designlang。
 
-| 选项                | 说明                                      |
-| ------------------- | ----------------------------------------- |
-| `-o, --out <dir>` | 输出目录（默认：`./nexpage-output/`）   |
-| `--pick-output`   | 用 Finder 选择父文件夹并创建防覆盖结果目录 |
-| `-y, --yes`       | 跳过"按 Enter 确认"，打开浏览器后直接提取 |
-| `--profile codex` | 只生成 Codex 精简上下文包                 |
-| `--with-codex`    | 在完整结果旁额外生成 Codex 精简上下文包      |
-| `-h, --help`      | 显示帮助                                  |
+## 快速开始
 
-### 示例
+交互式提取：
 
 ```bash
-# 基本用法：交互式提取
 nexpage https://stripe.com
-
-# 浏览器打开后 → 登录/导航 → 回到终端按 Enter → 提取开始
 ```
+
+浏览器打开后，你可以登录或导航到目标状态。回到终端按 Enter 后开始提取。
+
+只生成 Codex 视觉包：
 
 ```bash
-# 自动提取（不适合需要登录的网站）
-nexpage example.com -y
+nexpage https://stripe.com --profile codex -o ./nexpage-output/stripe
 ```
+
+完整输出并附加 Codex 视觉包：
 
 ```bash
-# 指定输出目录
-nexpage https://uiverse.io/elements -o ~/Desktop/uiverse-ds
+nexpage https://stripe.com --with-codex -o ./nexpage-output/stripe
 ```
+
+页面不需要手动操作时，可以跳过确认：
 
 ```bash
-# 用 Finder 选择保存位置；自动创建“时间＋域名”子目录
-nexpage https://uiverse.io/elements --pick-output
+nexpage https://example.com -y
 ```
 
-```bash
-# Finder 选目录，只生成专供 Codex 使用的精简上下文
-nexpage https://stripe.com --pick-output --profile codex
-```
+## CLI 选项
 
-```bash
-# 生成原有完整结果，并额外附带 Codex 精简上下文
-nexpage https://stripe.com --with-codex
-```
+| 选项 | 说明 |
+|---|---|
+| `-o, --out <dir>` | 指定最终输出目录，默认 `./nexpage-output/` |
+| `--pick-output` | 用 macOS Finder 选择父目录并创建防覆盖子目录 |
+| `-y, --yes` | 跳过 Enter 确认，页面打开后直接提取 |
+| `--profile codex` | 只生成 `codex-context/` |
+| `--with-codex` | 保留完整输出并附加 `codex-context/` |
+| `-h, --help` | 显示帮助 |
 
-### 保存位置
-
-`-o/--out` 会把你提供的路径当作最终输出目录，兼容原有用法，并支持 `~`：
+`--out` 把提供的路径当作最终输出目录，并支持带引号的 `~`：
 
 ```bash
 nexpage https://example.com -o "~/Desktop/My UI Research"
 ```
 
-`--pick-output` 会弹出 macOS Finder 文件夹选择器。选择父文件夹后，nexpage 会自动创建独立目录：
+`--pick-output` 会在所选父目录内创建 `日期时间-域名` 子目录；同名时自动追加数字，不覆盖旧结果。它不能和 `--out` 同时使用。
 
-```text
-你选择的文件夹/
-└── 2026-07-19-1430-example-com/
-```
+## Codex 视觉包
 
-如果同一分钟内重复提取，会自动追加 `-2`、`-3`，不会覆盖上一份结果。`--out` 和 `--pick-output` 不能同时使用；漏写 `-o/--out` 的路径时会立即提示错误。
-
-## 工作流程
-
-```
-nexpage <url>
-  │
-  ├─ 1. 打开可见 Chromium 窗口
-  │
-  ├─ 2. 等待你在窗口中操作（登录、跳转、筛选）
-  │    按 Enter 继续...
-  │
-  ├─ 3. 截取当前页面截图
-  │
-  ├─ 4. 从当前页面提取设计系统（复用浏览器窗口，不需要 headless）
-  │
-  ├─ 5. 生成 40 个输出文件
-  │    设计 Token / 设计语言 / 动效 / 框架主题 / AI Prompts / 数据文件
-  │
-  └─ 6. 打印摘要
-```
-
-## 输出文件
-
-每次提取生成约 40 个文件，按类别组织：
-
-```
-nexpage-output/<域名>/
-  ├── page-screenshot.png          # 提取时的页面截图
-  ├── result.json                  # 完整的结构化数据
-  │
-  ├── 设计 Token 文件 (9)
-  │   ├── <域名>-design-tokens.json    W3C DTCG v1
-  │   ├── <域名>-variables.css         CSS 变量
-  │   ├── <域名>-tailwind.config.js    Tailwind v3
-  │   ├── <域名>-tailwind-v4.css       Tailwind v4 @theme
-  │   ├── <域名>-tokens.d.ts           TypeScript 类型
-  │   ├── <域名>-reset.css             CSS Reset
-  │   ├── <域名>-shadcn-theme.css      shadcn/ui 主题
-  │   ├── <域名>-gradients.css|json    渐变色
-  │   └── <域名>-figma-variables.json  Figma Variables
-  │
-  ├── 设计语言 & 预览 (5)
-  │   ├── <域名>-design-language.md    给 AI agent 用
-  │   ├── <域名>-preview.html          视觉预览
-  │   ├── <域名>.brand.html            品牌书
-  │   ├── <域名>-AGENT.md              Agent 系统提示
-  │   └── <域名>-DESIGN.md             Agent 原生格式
-  │
-  ├── 动效 (6)
-  │   ├── <域名>-motion.html           动效实验室
-  │   ├── <域名>-motion.css            CSS Motion
-  │   ├── <域名>-motion.framer.js      Framer Motion
-  │   ├── <域名>-motion.gsap.js        GSAP
-  │   ├── <域名>-motion.one.js         Motion One
-  │   └── <域名>-motion.waapi.js       Web Animations API
-  │
-  ├── 框架 & 平台 (4)
-  │   ├── <域名>-theme.js              React
-  │   ├── <域名>-vue-theme.js          Vue
-  │   ├── <域名>-svelte-theme.css      Svelte
-  │   └── <域名>-wordpress-theme.json  WordPress
-  │
-  ├── AI Prompts (4)
-  │   └── <域名>-prompts/
-  │       ├── v0.txt
-  │       ├── lovable.txt
-  │       ├── cursor.md
-  │       └── claude-artifacts.md
-  │
-  └── 数据文件 (9)
-      ├── <域名>-voice.json
-      ├── <域名>-intent.json
-      ├── <域名>-visual-dna.json
-      ├── <域名>-library.json
-      ├── <域名>-seo.json
-      ├── <域名>-icon-system.json
-      ├── <域名>-stack-intel.json
-      ├── <域名>-form-states.json
-      └── <域名>-mcp.json
-```
-
-## Codex Profile
-
-`nexpage <url> --profile codex -o <目录>` 只生成 `codex-context/`；它不再写入原有的完整导出。`nexpage <url> --with-codex -o <目录>` 则保留完整导出，并在同一输出目录附加这个可信包。
-
-正常完成完整页面截图时，`codex-context/` 的文件契约为 5/6 个：
+正常完整页面采集会生成 10 个文件；检测到有效动效时为 11 个：
 
 ```text
 codex-context/
-  ├── reference.png       # 当前视口视觉参考
-  ├── reference-full.png  # 完整页面视觉参考
-  ├── CODEX.md         # 为 Codex 清洗、校验后的设计上下文与实现规则
-  ├── tokens.json      # 结构化设计 Token
-  ├── variables.css    # 可直接接入项目的 CSS Variables
-  └── motion.json      # 仅在检测到有效动效时生成
+├── CODEX.md                  # 第一入口、证据边界与视觉冲突裁决
+├── codex-instructions.md     # Agent 阅读顺序和执行流程
+├── design-strict.md          # 严格视觉锚点与硬性失败条件
+├── components.md             # 按钮、卡片、表面和状态规则
+├── STYLE-GUARDRAILS.md       # 防模板化与防跑偏规则
+├── acceptance-checklist.md   # 实现后的视觉验收清单
+├── tokens.json               # 结构化精确 Token
+├── variables.css             # 可直接使用的 CSS Variables
+├── reference.png             # 当前视口视觉参考
+├── reference-full.png        # 滚动加载后的长页视觉参考
+└── motion.json               # 可选，仅在存在有效动效时生成
 ```
 
-前三个文本文件和 `reference.png` 是必有文件；`reference-full.png` 在完整页面截图成功时加入；`motion.json` 只在发现已绑定真实目标与时长的动效时加入。因此完整页面包是 5 个文件（无有效动效）或 6 个文件（有有效动效）。如果完整页面截图无法写入，包会降级为首屏覆盖：4 个文件（无有效动效）或 5 个文件（有有效动效），并在 `CODEX.md` 和终端警告中说明不能推断完整页面节奏。
+完整页截图失败时不生成 `reference-full.png`，视觉包会明确声明只能证明首屏范围。
 
-让 Codex 开发新页面时，把整个输出目录交给它，并只需说明：**“这是我的目标视觉风格”**。如果还有具体产品需求，再继续描述目标用户、功能与内容即可。
+### 交给 Codex 使用
 
-nexpage 本身不接入 Codex 或 OpenAI API，不需要 API Key，也不会产生模型 Token 费用。它只在本地运行 CLI、浏览器采集和文件写入；是否调用模型由你随后使用的 Codex 环境决定。
-
-这个包迁移的是颜色、排版、间距、形状、材质和动效等**视觉语言**，不是来源网站的复刻模板：不得复制来源品牌、Logo、文案、专有插画、产品内容或信息架构。新页面应先按自己的产品需求设计信息架构，再应用视觉语言。
-
-`CODEX.md` 会明确区分“提取事实”和“启发式推断”，并进行以下质量处理：
-
-- 低使用次数或浏览器默认色不会被写成强制品牌色
-- CTA、组件变体和断点会被安全格式化，不输出 `[object Object]`
-- 标题字号不会直接被误标为正文 Token
-- 重复 CSS Variable 名称会自动添加序号
-- 未使用的 Keyframe 和空滚动信号不会生成 `motion.json`
-- 截图与自动推断冲突时，明确要求 Codex 以截图和产品需求为准
-
-可选提示词：
+把整个 `codex-context/` 目录和你的产品需求一起交给 Codex，例如：
 
 ```text
-请先读取 codex-context/CODEX.md，并按其中的“使用顺序”查看其余文件。
-为我的产品开发一个新页面：继承参考网站的视觉语言，但不要复制其品牌、Logo、文案和产品信息。
+请先读取 codex-context/CODEX.md，并按其中顺序查看其余文件和两张截图。
+为我的产品设计并实现一个新页面：继承这里的视觉语言，但不要复制来源品牌、Logo、文案、插画和信息架构。
 ```
 
-## 提取结果验证
+自动提取的 `actionPrimary`、`surface`、`ink` 等语义角色可能误判或缺失。视觉包会要求 Codex：
 
-每次提取完成后，终端会显示摘要，帮助你快速判断结果是否可信：
+1. 必须实际查看参考截图；
+2. 用截图判断“哪个元素是什么角色”；
+3. 用 Token/CSS 获取匹配元素的精确数值；
+4. 冲突时按截图重新映射角色，不盲从自动标签；
+5. 在完成报告中说明无法确认和人工补全的部分。
 
+这样可以利用下游 Codex 已有的视觉能力纠错，而不要求 Nexpage 自己调用模型 API。
+
+## 完整输出
+
+默认模式会生成 40+ 文件，主要包括：
+
+- DTCG Token、CSS Variables、Tailwind v3/v4、shadcn 主题和 Figma Variables；
+- 设计语言 Markdown、预览页、品牌书、Agent 提示和 DESIGN.md；
+- CSS、Framer Motion、GSAP、Motion One 和 WAAPI 动效输出；
+- React、Vue、Svelte 和 WordPress 主题；
+- 语气、页面意图、视觉 DNA、组件库、SEO、图标、技术栈和表单状态数据。
+
+完整清单会随功能演进，生成目录中的文件是最终事实。
+
+## 隐私、版权与合理使用
+
+- 浏览器和提取过程在本地运行；Nexpage 不上传页面、Cookie 或截图。
+- 登录只在本次临时浏览器上下文中使用，不要把生成结果当作安全存储。
+- 截图和输出可能包含用户名、内部页面、个人信息或第三方版权内容；分享前必须检查和脱敏。
+- 只提取你有权访问和使用的页面，不要绕过验证码、付费墙、权限控制或网站安全机制。
+- 视觉语言可以用于灵感和主题迁移，但不要复制来源商标、Logo、文案、专有插画或完整产品信息架构。
+- 本项目的 MIT License 不会自动授予你使用第三方网站内容和资产的权利。
+
+## 已知限制
+
+- 当前主要面向单个 URL，不是整站爬虫；
+- 自动语义角色仍可能在透明按钮、渐变、图片背景或非标准 DOM 上判断错误；
+- Canvas、WebGL、视频和必须交互后才出现的状态无法保证完整提取；
+- 某些网站会检测或阻止自动化 Chromium；可见浏览器不代表能够绕过验证；
+- 长页参考图由多个实际视口拼接，可能出现细小接缝，不是像素级页面存档；
+- 移动端和登录后不同权限状态需要分别验证。
+
+## 开发与贡献
+
+```bash
+npm install
+npx playwright install chromium
+npm test
 ```
-══════════════════════════════════════
-stripe-com
-Stripe - Financial Infrastructure
-──────────────────────────────────────
-● 评分  A · 92/100
-● 主色  #635BFF
-● 字体  Soehne, Soehne Mono
-● 颜色  25 种
-● DOM 元素  2847
-● 文件  40 个
-──────────────────────────────────────
-✓ 已保存到 ./nexpage-output/
-```
 
-如果检测到异常（验证页、元素过少、无自定义字体），会显示警告。
+提交贡献前请阅读 [CONTRIBUTING.md](CONTRIBUTING.md)。安全漏洞请按 [SECURITY.md](SECURITY.md) 私下报告。
 
-## 技术原理
+项目结构见 [docs/architecture.md](docs/architecture.md)，技术决策见 [project-management/PROJECT.md](project-management/PROJECT.md)，版本记录见 [project-management/CHANGELOG.md](project-management/CHANGELOG.md)。
 
-nexpage 从 designlang v12.21.0 Fork，保留完整的 40+ 提取器和 40+ 格式化器，精简了 CI/同步/监控等非提取模块。核心改动：
+## 来源与许可
 
-- `crawler.js`：新增 `existingPage` 参数，可直接复用外部打开的浏览器 Page 对象
-- 所有输出文件品牌标识从 designlang 替换为 nexpage
-- 仅依赖 playwright，不依赖任何外部 npm 包
+Nexpage 基于 [designlang 12.21.0](https://www.npmjs.com/package/designlang) 的 MIT 源码 Fork，并在可见浏览器工作流、交互式提取、Codex 可信视觉包、截图稳定性、语义证据模型和包校验方面进行了独立修改。
 
-## 项目管理
-
-版本记录、功能规划、Bug 追踪见 `project-management/` 目录：
-
-- [PROJECT.md](project-management/PROJECT.md) — 项目总览
-- [CHANGELOG.md](project-management/CHANGELOG.md) — 版本更新日志
-- [IDEAS.md](project-management/IDEAS.md) — 功能想法 & 需求池
-- [BUGS.md](project-management/BUGS.md) — Bug 追踪
-
-## 许可
-
-MIT
+项目按 [MIT License](LICENSE) 开源。原作者版权声明和 Fork 说明见 [NOTICE](NOTICE)。处理第三方网页时仍需遵守相应网站的条款、版权和隐私要求。

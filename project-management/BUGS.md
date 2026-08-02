@@ -34,4 +34,4 @@
 | 8 | headless Chrome 被 Cloudflare 拦截 | 阻塞 | ✅ 已修复 | CLI 默认 visible browser |
 | 8e | 进程通信层 id 冲突导致响应丢失 | 阻塞 | ✅ 已修复 | CLI 无跨进程通信 |
 
-> 详细记录见 `designlang-ui/BUGFIX.md`
+> 这些记录来自早期相关项目，仅用于说明 CLI 架构选择；对应的内部项目文档不包含在本仓库中。

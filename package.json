@@ -7,7 +7,8 @@
     "nexpage": "./bin/nexpage.mjs"
   },
   "scripts": {
-    "test": "node --test"
+    "test": "node --test",
+    "check": "npm test"
   },
   "dependencies": {
     "playwright": "^1.42.0"
@@ -15,7 +16,31 @@
   "engines": {
     "node": ">=20"
   },
-  "keywords": ["design-system", "design-tokens", "extraction", "tailwind", "css"],
-  "author": "",
-  "license": "MIT"
+  "keywords": [
+    "design-system",
+    "design-tokens",
+    "visual-language",
+    "codex",
+    "playwright",
+    "tailwind",
+    "css"
+  ],
+  "author": "Yubo",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/anlygale-debug/nexpage-cli.git"
+  },
+  "homepage": "https://github.com/anlygale-debug/nexpage-cli#readme",
+  "bugs": {
+    "url": "https://github.com/anlygale-debug/nexpage-cli/issues"
+  },
+  "files": [
+    "bin/",
+    "src/",
+    "README.md",
+    "README.en.md",
+    "LICENSE",
+    "NOTICE"
+  ]
 }

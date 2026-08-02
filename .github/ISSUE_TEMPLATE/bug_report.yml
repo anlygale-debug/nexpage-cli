@@ -1,0 +1,68 @@
+name: Bug report
+description: Report a reproducible Nexpage problem
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug. Never include credentials, cookies, private URLs, or sensitive screenshots.
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: What happened?
+      description: Describe the actual and expected behavior.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Reproduction steps
+      description: Include the command you ran and the smallest reliable sequence.
+      placeholder: |
+        1. Run `nexpage ...`
+        2. ...
+        3. Observe ...
+    validations:
+      required: true
+
+  - type: input
+    id: public_url
+    attributes:
+      label: Public target URL, if safe to share
+      description: Leave blank for private or authenticated pages.
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Sanitized logs
+      description: Remove tokens, cookies, account data, and private paths.
+      render: shell
+
+  - type: input
+    id: node
+    attributes:
+      label: Node.js version
+      placeholder: v20.x
+    validations:
+      required: true
+
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      placeholder: macOS 15, Ubuntu 24.04, Windows 11
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Safety check
+      options:
+        - label: I removed credentials, cookies, personal data, and private website content.
+          required: true
+        - label: I searched existing issues for duplicates.
+          required: true

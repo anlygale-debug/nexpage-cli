@@ -1,0 +1,27 @@
+# Dependencies
+node_modules/
+
+# Generated extraction and dogfood output
+nexpage-output/
+dogfood-output/
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+
+# Logs, coverage, and temporary files
+*.log
+coverage/
+.nyc_output/
+.cache/
+tmp/
+temp/
+
+# Operating systems and editors
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*~

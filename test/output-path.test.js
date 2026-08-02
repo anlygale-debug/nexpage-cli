@@ -5,7 +5,7 @@ import * as nexpage from '../src/index.js';
 const baseOptions = {
   url: 'https://www.example.com/products',
   cwd: '/workspace',
-  homeDir: '/Users/yubo',
+  homeDir: '/Users/alice',
   now: new Date(2026, 6, 19, 14, 30),
   exists: () => false,
 };
@@ -25,7 +25,7 @@ test('expands a quoted home-relative --out path and preserves exact-directory se
     args: ['--out', '"~/Desktop/UI Exports"'],
   });
   assert.deepEqual(result, {
-    directory: '/Users/yubo/Desktop/UI Exports',
+    directory: '/Users/alice/Desktop/UI Exports',
     mode: 'exact',
   });
 });
@@ -46,28 +46,28 @@ test('uses a Finder-selected parent and creates a dated domain subfolder', () =>
     args: ['--pick-output'],
     pickDirectory: () => {
       pickerCalls += 1;
-      return '/Users/yubo/Desktop/Exports/';
+      return '/Users/alice/Desktop/Exports/';
     },
   });
   assert.equal(pickerCalls, 1);
   assert.deepEqual(result, {
-    directory: '/Users/yubo/Desktop/Exports/2026-07-19-1430-example-com',
+    directory: '/Users/alice/Desktop/Exports/2026-07-19-1430-example-com',
     mode: 'picked',
   });
 });
 
 test('adds a numeric suffix when the picked run directory already exists', () => {
   const occupied = new Set([
-    '/Users/yubo/Desktop/Exports/2026-07-19-1430-example-com',
-    '/Users/yubo/Desktop/Exports/2026-07-19-1430-example-com-2',
+    '/Users/alice/Desktop/Exports/2026-07-19-1430-example-com',
+    '/Users/alice/Desktop/Exports/2026-07-19-1430-example-com-2',
   ]);
   const result = nexpage.resolveOutputDirectory({
     ...baseOptions,
     args: ['--pick-output'],
-    pickDirectory: () => '/Users/yubo/Desktop/Exports',
+    pickDirectory: () => '/Users/alice/Desktop/Exports',
     exists: path => occupied.has(path),
   });
-  assert.equal(result.directory, '/Users/yubo/Desktop/Exports/2026-07-19-1430-example-com-3');
+  assert.equal(result.directory, '/Users/alice/Desktop/Exports/2026-07-19-1430-example-com-3');
 });
 
 test('rejects combining exact output and Finder output modes', () => {
@@ -85,9 +85,9 @@ test('normalizes the macOS Finder result and reports cancellation clearly', () =
   assert.equal(typeof nexpage.chooseOutputFolder, 'function');
   const selected = nexpage.chooseOutputFolder({
     platform: 'darwin',
-    execFile: () => '/Users/yubo/Desktop/My Exports/\n',
+    execFile: () => '/Users/alice/Desktop/My Exports/\n',
   });
-  assert.equal(selected, '/Users/yubo/Desktop/My Exports');
+  assert.equal(selected, '/Users/alice/Desktop/My Exports');
 
   assert.throws(
     () => nexpage.chooseOutputFolder({

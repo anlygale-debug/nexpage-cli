@@ -5,21 +5,22 @@
 nexpage 是一个从任意网站提取设计系统的命令行工具。核心能力：
 
 - 可见浏览器打开目标网站 → 用户登录/导航 → 提取设计 Token
-- 完全独立的 CLI 工具，零外部依赖（仅 playwright）
+- 完全独立的 CLI 工具，仅保留 Playwright 运行依赖
 - Fork from designlang v12.21.0，精简为核心提取链路
 - 所有品牌标识已替换为 nexpage
 
-**当前版本**：0.1.0（初始版本）
+**当前版本**：0.1.0（`main` 含下一版本的未发布改进）
 
 ## 技术架构
 
 ```
 nexpage-cli/
-  bin/nexpage.mjs          CLI 入口（200 行）
+  bin/nexpage.mjs          CLI 入口
   src/
     crawler.js             浏览器引擎（支持 existingPage）
     index.js               提取编排 + 所有导出
-    extractors/            40+ 纯算法分析模块
+    codex/                 证据采集、截图准备、模型、格式化与校验
+    extractors/            40+ 分析模块
     formatters/            40+ 输出格式器
     utils.js               工具函数
     utils-cookies.js       Cookie 处理
@@ -50,10 +51,11 @@ nexpage-cli/
 ## Codex 可信包契约
 
 - 默认完整导出保持不变；只有显式传入 `--profile codex` 才只输出 `codex-context/`。
-- `codex-context/` 始终含 `reference.png`、`CODEX.md`、`tokens.json`、`variables.css`；完整页面截图成功时含 `reference-full.png`，有效动效存在时含 `motion.json`。
-- 因此正常完整页面包为 5/6 个文件；完整页面截图失败时降级为首屏覆盖的 4/5 个文件，并明确标示覆盖范围。
+- `codex-context/` 始终含 `reference.png`、`CODEX.md`、`tokens.json`、`variables.css`、严格设计规则、组件规则、执行说明、防跑偏规则和验收清单；完整页面截图成功时含 `reference-full.png`，有效动效存在时含 `motion.json`。
+- 因此正常完整页面包为 10/11 个文件；完整页面截图失败时降级为首屏覆盖的 9/10 个文件，并明确标示覆盖范围。
 - 包用于迁移视觉语言，不复制来源品牌、内容或信息架构；用户把整个输出目录交给 Codex 后，可用“这是我的目标视觉风格”作为最小说明。
 - nexpage 不调用 Codex/OpenAI API，不需要 API Key，也不产生模型 Token 费用。
+- 自动语义标签与截图冲突时，下游 Codex 必须用视觉能力查看截图并重新映射角色；Token 继续提供精确数值。
 
 ## 输出文件清单（40 个）
 

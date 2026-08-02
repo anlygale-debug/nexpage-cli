@@ -2,6 +2,31 @@
 
 ## [Unreleased]
 
+### 开源发布准备
+
+- 新增 MIT `LICENSE`，保留 designlang 上游版权声明
+- 新增 `NOTICE`，说明 Fork 来源、主要修改和第三方内容边界
+- 新增中英文 README、贡献指南、安全政策、支持说明和社区行为准则
+- 新增 GitHub Actions CI、Dependabot、Issue 表单和 Pull Request 模板
+- 新增 `.gitignore`，不再跟踪依赖、测试输出、提取结果和本地环境文件
+- 完善 npm 包元数据与公开仓库链接
+
+### 稳定性与视觉证据
+
+- 导航失败时自动重试；页面已实际渲染时允许降级继续提取
+- 截图前清理常见 Cookie、隐私、地区、登录对话框和遮罩
+- 滚动预热懒加载内容，并用真实视口切片生成长页参考图
+- 主操作识别加入首屏位置、主要内容区域和操作顺序证据
+- 间距 Token 压缩为可实现的 4px/8px 基础节奏
+
+### Codex 执行包
+
+- 新增 `design-strict.md`、`components.md`、`codex-instructions.md`、`STYLE-GUARDRAILS.md` 和 `acceptance-checklist.md`
+- 正常 Codex 包从 5/6 个文件扩展为 10/11 个文件
+- 明确声明自动语义标签可能误判或缺失
+- 截图与 `actionPrimary`、`surface`、`ink` 等标签冲突时，要求有视觉能力的 Codex 按截图重新映射角色
+- 自动化测试扩展到 104 项
+
 ### 输出目录体验
 
 - 新增 `--pick-output`，通过 macOS Finder 选择结果保存位置
