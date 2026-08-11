@@ -4,13 +4,21 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Node.js 20+](https://img.shields.io/badge/Node.js-20%2B-339933.svg)](https://nodejs.org/)
 
-[English](README.en.md) · 简体中文
+[English](README.en.md) · 简体中文 · [UI 灵感库](https://github.com/anlygale-debug/ui-inspiration-library) · [截图 Prompt Kit](https://github.com/anlygale-debug/screenshot-to-design-system-prompt-kit)
 
 Nexpage 是一个本地运行的网页视觉语言提取 CLI。它打开一个可见的 Chromium 窗口，让你在需要时手动登录或导航，然后从当前实际渲染页面提取颜色、排版、间距、形状、材质、动效和设计 Token。
 
 它还可以生成专门交给 Codex 等视觉 Agent 使用的 `codex-context/`：源码负责精确测量，截图负责视觉语义，Agent 在两者冲突时进行视觉裁决。
 
 > 项目状态：早期 `0.x` 版本。已经过自动化测试和多站点真实回归，但复杂 Canvas、WebGL、强反自动化页面和特殊登录流程仍可能失败。
+
+## 在 UI 灵感库中使用
+
+[UI 灵感库](https://github.com/anlygale-debug/ui-inspiration-library) 已经接入 Nexpage Worker。用户可以在 GUI 中输入网页链接，等待可见浏览器准备完成，手动登录或调整页面状态，然后回到应用继续采集。Nexpage 会返回首屏、长截图和 `codex-context/`，UI 灵感库据此创建灵感详情并建立视觉包关联。
+
+两个仓库仍然独立维护。UI 灵感库通过 `bin/nexpage-worker.mjs` 启动本地 Worker；Nexpage 不需要嵌入 Electron，也不会因此获得 UI 灵感库数据库或其他任意本地文件的访问权限。
+
+如果你只有截图或本地设计稿，可以改用 [Screenshot-to-Design-System Prompt Kit](https://github.com/anlygale-debug/screenshot-to-design-system-prompt-kit)，生成视觉包后再关联到 UI 灵感库。
 
 ## 为什么做 Nexpage
 
@@ -35,6 +43,7 @@ Nexpage 不绕过验证码、访问控制或网站安全措施。网站仍可阻
 - 导航超时重试与已渲染页面降级继续
 - Codex 包暂存、完整性校验和原子替换
 - macOS Finder 输出目录选择与防覆盖命名
+- 面向 UI 灵感库的本地 Worker 协议
 
 ## 环境要求
 

@@ -4,7 +4,8 @@
   "description": "Extract design systems from any website — open visible browser, log in, extract tokens",
   "type": "module",
   "bin": {
-    "nexpage": "./bin/nexpage.mjs"
+    "nexpage": "./bin/nexpage.mjs",
+    "nexpage-worker": "./bin/nexpage-worker.mjs"
   },
   "scripts": {
     "test": "node --test",

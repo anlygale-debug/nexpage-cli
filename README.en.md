@@ -4,13 +4,21 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Node.js 20+](https://img.shields.io/badge/Node.js-20%2B-339933.svg)](https://nodejs.org/)
 
-English · [简体中文](README.md)
+English · [简体中文](README.md) · [UI Inspiration Library](https://github.com/anlygale-debug/ui-inspiration-library) · [Screenshot Prompt Kit](https://github.com/anlygale-debug/screenshot-to-design-system-prompt-kit)
 
 Nexpage is a local CLI that extracts a website's rendered visual language. It opens a visible Chromium window so you can log in or navigate when necessary, then collects colors, typography, spacing, shapes, surfaces, motion, and design tokens from the page you actually see.
 
 It can also generate a verified `codex-context/` package for vision-capable coding agents: source evidence provides exact values, screenshots provide visual meaning, and the agent arbitrates conflicts between them.
 
 > Status: early `0.x`. Nexpage has automated tests and multi-site dogfood coverage, but complex Canvas/WebGL pages, aggressive automation defenses, and unusual login flows may still fail.
+
+## Use it from UI Inspiration Library
+
+[UI Inspiration Library](https://github.com/anlygale-debug/ui-inspiration-library) uses the local Nexpage Worker. From its GUI, enter a URL, wait for the visible browser, sign in or adjust the page if needed, then continue the capture in the app. Nexpage returns the viewport reference, full-page reference, and `codex-context/`; UI Inspiration Library creates the inspiration record and links the package.
+
+The repositories remain independent. UI Inspiration Library starts `bin/nexpage-worker.mjs` as a local process. Nexpage is not embedded in the Electron renderer and does not receive general access to the library database or unrelated local files.
+
+For screenshots or local mockups, use the [Screenshot-to-Design-System Prompt Kit](https://github.com/anlygale-debug/screenshot-to-design-system-prompt-kit), then link the generated folder in UI Inspiration Library.
 
 ## Highlights
 
@@ -24,6 +32,7 @@ It can also generate a verified `codex-context/` package for vision-capable codi
 - Navigation retry and degraded continuation for already-rendered pages
 - Atomic Codex package validation and replacement
 - No model API, API key, account, or token cost
+- Local Worker protocol for UI Inspiration Library
 
 Nexpage does not bypass CAPTCHAs, access controls, or website security. Only process pages you are authorized to access and follow the target site's terms.
 
